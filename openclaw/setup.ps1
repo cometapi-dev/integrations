@@ -294,25 +294,25 @@ const ADD_MODELS  = "$addModelsStr";
 const COMETAPI_PROVIDERS = {
   "cometapi-openai": {
     baseUrl: "$BaseUrlOpenai",
-    apiKey: "\${COMETAPI_KEY}",
+    apiKey: "`${COMETAPI_KEY}",
     api: "openai-completions",
     models: [{ id: "gpt-5.4", name: "GPT-5.4" }]
   },
   "cometapi-openai-responses": {
     baseUrl: "$BaseUrlOpenai",
-    apiKey: "\${COMETAPI_KEY}",
+    apiKey: "`${COMETAPI_KEY}",
     api: "openai-responses",
     models: [{ id: "gpt-5.4-pro", name: "GPT-5.4 Pro" }]
   },
   "cometapi-claude": {
     baseUrl: "$BaseUrlAnthropic",
-    apiKey: "\${COMETAPI_KEY}",
+    apiKey: "`${COMETAPI_KEY}",
     api: "anthropic-messages",
     models: [{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" }]
   },
   "cometapi-gemini": {
     baseUrl: "$BaseUrlGemini",
-    apiKey: "\${COMETAPI_KEY}",
+    apiKey: "`${COMETAPI_KEY}",
     api: "google-generative-ai",
     models: [{ id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro" }]
   }
