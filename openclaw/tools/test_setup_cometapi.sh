@@ -145,9 +145,9 @@ assert_json_field "1e: has cometapi-gemini provider" \
   "models.providers.cometapi-gemini.api" \
   "google-generative-ai"
 
-assert_json_field "1f: has cometapi-openai-responses provider" \
+assert_json_field "1f: has cometapi-responses provider" \
   "${FAKE_HOME}/.openclaw/openclaw.json" \
-  "models.providers.cometapi-openai-responses.api" \
+  "models.providers.cometapi-responses.api" \
   "openai-responses"
 
 assert_json_field "1g: default model is cometapi-claude/claude-sonnet-4-6" \
@@ -450,7 +450,7 @@ assert_contains "14c: help shows --dry-run" "${OUTPUT14}" "--dry-run"
 echo ""
 echo "── Test 15: --version flag ──"
 OUTPUT15="$(HOME="${FAKE_HOME}" PATH="${FAKE_BIN}:${PATH}" sh "${SETUP_SCRIPT}" --version 2>&1)"
-assert_contains "15a: version output" "${OUTPUT15}" "setup_cometapi.sh v"
+assert_contains "15a: version output" "${OUTPUT15}" "setup.sh v"
 
 # ── Test 16: --add-model adds model to existing provider ────────────────
 echo ""

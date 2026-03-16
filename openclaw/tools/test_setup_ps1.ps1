@@ -118,7 +118,7 @@ Assert-Contains "1a: .env contains COMETAPI_KEY"     $envContent "COMETAPI_KEY=s
 Assert-JsonField "1b: cometapi-openai api"            (Get-ConfigFile) "models.providers.cometapi-openai.api"             "openai-completions"
 Assert-JsonField "1c: cometapi-claude api"            (Get-ConfigFile) "models.providers.cometapi-claude.api"             "anthropic-messages"
 Assert-JsonField "1d: cometapi-gemini api"            (Get-ConfigFile) "models.providers.cometapi-gemini.api"             "google-generative-ai"
-Assert-JsonField "1e: cometapi-openai-responses api"  (Get-ConfigFile) "models.providers.cometapi-openai-responses.api"   "openai-responses"
+Assert-JsonField "1e: cometapi-responses api"          (Get-ConfigFile) "models.providers.cometapi-responses.api"             "openai-responses"
 Assert-JsonField "1f: default model"                  (Get-ConfigFile) "agents.defaults.model.primary"                    "cometapi-claude/claude-sonnet-4-6"
 Assert-JsonField "1g: models.mode is merge"           (Get-ConfigFile) "models.mode"                                      "merge"
 Assert-JsonField "1h: baseUrl openai"                 (Get-ConfigFile) "models.providers.cometapi-openai.baseUrl"         "https://api.cometapi.com/v1"
@@ -258,7 +258,7 @@ if (Test-Path $realConfigPath) {
     Copy-Item $realConfigPath $backupPath -Force
     # Strip cometapi providers
     $realCfg = Get-Content $realConfigPath -Raw | ConvertFrom-Json
-    $toRemove = @('cometapi-openai','cometapi-openai-responses','cometapi-claude','cometapi-gemini')
+    $toRemove = @('cometapi-openai','cometapi-responses','cometapi-claude','cometapi-gemini')
     foreach ($p in $toRemove) {
         if ($realCfg.models.providers.PSObject.Properties[$p]) {
             $realCfg.models.providers.PSObject.Properties.Remove($p)

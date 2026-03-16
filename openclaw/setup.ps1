@@ -25,26 +25,23 @@
     Show what would be changed without writing any files.
 
 .EXAMPLE
-    .\setup_cometapi.ps1
+    irm https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1 | iex
     # Interactive prompt for API key
 
 .EXAMPLE
-    .\setup_cometapi.ps1 -Key sk-xxxxx
+    & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -Key sk-xxxxx
     # Non-interactive
 
 .EXAMPLE
-    .\setup_cometapi.ps1 -AddModel cometapi-openai/gpt-5.2-chat-latest
+    & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -AddModel cometapi-openai/gpt-5.2-chat-latest
     # Add a model to a provider
 
 .EXAMPLE
-    .\setup_cometapi.ps1 -AddModel cometapi-claude/claude-sonnet-4-6 -AddModel cometapi-gemini/gemini-3.1-pro
-
-.EXAMPLE
-    .\setup_cometapi.ps1 -DryRun
+    & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -DryRun
     # Preview changes without writing
 
 .EXAMPLE
-    .\setup_cometapi.ps1 -Key sk-testkey1234567890 -SkipVerify
+    & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -Key sk-testkey1234567890 -SkipVerify
     # Skip API verification (useful in CI/test environments)
 
 .LINK
@@ -298,7 +295,7 @@ const COMETAPI_PROVIDERS = {
     api: "openai-completions",
     models: [{ id: "gpt-5.4", name: "GPT-5.4" }]
   },
-  "cometapi-openai-responses": {
+  "cometapi-responses": {
     baseUrl: "$BaseUrlOpenai",
     apiKey: "`${COMETAPI_KEY}",
     api: "openai-responses",
@@ -439,7 +436,7 @@ Write-Host "  🦞 OpenClaw is now powered by all 4 CometAPI providers."
 Write-Host ""
 Write-Host "  📡 Configured providers:"
 Write-Host "     ├─ cometapi-openai            Chat Completions (gpt-5.4 …)"
-Write-Host "     ├─ cometapi-openai-responses  Responses API (gpt-5.4-pro …)"
+Write-Host "     ├─ cometapi-responses         Responses API (gpt-5.4-pro …)"
 Write-Host "     ├─ cometapi-claude            Anthropic (claude-sonnet-4-6 …)"
 Write-Host "     └─ cometapi-gemini            Google AI (gemini-3.1-pro …)"
 Write-Host ""
@@ -449,10 +446,11 @@ Write-Host "     openclaw models list --provider cometapi-claude    # list model
 Write-Host "     openclaw doctor                                    # diagnostics"
 Write-Host ""
 Write-Host "  ➕ Add a model (rerun with -AddModel):"
-Write-Host "     .\setup.ps1 -AddModel cometapi-openai/gpt-5-latest"
-Write-Host "     .\setup.ps1 -AddModel cometapi-openai-responses/gpt-5-latest"
-Write-Host "     .\setup.ps1 -AddModel cometapi-claude/claude-opus-4-5"
-Write-Host "     .\setup.ps1 -AddModel cometapi-gemini/gemini-3.1-ultra"
+Write-Host "     irm https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1 | iex  # then use -AddModel:"
+Write-Host "     & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -AddModel cometapi-openai/gpt-5-latest"
+Write-Host "     & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -AddModel cometapi-responses/gpt-5-latest"
+Write-Host "     & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -AddModel cometapi-claude/claude-opus-4-5"
+Write-Host "     & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -AddModel cometapi-gemini/gemini-3.1-ultra"
 Write-Host ""
 Write-Host "  🔗 Browse all models: https://api.cometapi.com/models"
 Write-Host "  📖 Full docs:        https://docs.cometapi.com/integrations/openclaw"

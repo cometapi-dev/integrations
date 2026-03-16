@@ -73,7 +73,7 @@ ADD_MODELS=""  # comma-separated "provider/model-id" pairs
 
 show_help() {
   cat <<'HELPEOF'
-Usage: sh setup_cometapi.sh [OPTIONS]
+Usage: curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- [OPTIONS]
 
 🚀 Add CometAPI as a model provider to your local OpenClaw installation.
 
@@ -86,7 +86,7 @@ Options:
 
 Provider names for --add-model:
   cometapi-openai            OpenAI Chat Completions
-  cometapi-openai-responses  OpenAI Responses API
+  cometapi-responses           OpenAI Responses API
   cometapi-claude            Anthropic Messages
   cometapi-gemini            Google Generative AI
 
@@ -95,13 +95,11 @@ Environment variables:
   NO_COLOR       Disable colored output (https://no-color.org)
 
 Examples:
-  sh setup_cometapi.sh                                              # interactive
-  sh setup_cometapi.sh --key sk-xxxxx                               # non-interactive
-  sh setup_cometapi.sh --add-model cometapi-openai/gpt-5.2-chat-latest
-  sh setup_cometapi.sh --add-model cometapi-claude/claude-sonnet-4-6 \
-                       --add-model cometapi-gemini/gemini-3.1-pro
+  curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- --key sk-xxxxx
+  curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- --add-model cometapi-openai/gpt-5.2-chat-latest
 
-Windows users: use setup_cometapi.ps1 instead.
+Windows (PowerShell): irm https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1 | iex
 Full docs: https://docs.cometapi.com/integrations/openclaw
 HELPEOF
   exit 0
@@ -124,7 +122,7 @@ while [ $# -gt 0 ]; do
       shift ;;
     --dry-run)  DRY_RUN=1; shift ;;
     --help|-h)  show_help ;;
-    --version)  echo "setup_cometapi.sh v${SCRIPT_VERSION}"; exit 0 ;;
+    --version)  echo "setup.sh v${SCRIPT_VERSION}"; exit 0 ;;
     -*)         err "Unknown option: $1 (try --help)"; exit 1 ;;
     *)          # Positional: treat as key for backward compat
                 ARG_KEY="$1"; shift ;;
@@ -453,7 +451,7 @@ const BASE_URL_GEMINI     = process.env._SETUP_BASE_URL_GEMINI;
       api: "openai-completions",
       models: [{ id: "gpt-5.4", name: "GPT-5.4" }]
     },
-    "cometapi-openai-responses": {
+    "cometapi-responses": {
       baseUrl: BASE_URL_OPENAI,
       apiKey: "${COMETAPI_KEY}",
       api: "openai-responses",
@@ -608,7 +606,7 @@ echo "  🦞 OpenClaw is now powered by all 4 CometAPI providers."
 echo ""
 echo "  📡 Configured providers:"
 echo "     ├─ cometapi-openai            Chat Completions (gpt-5.4 …)"
-echo "     ├─ cometapi-openai-responses  Responses API (gpt-5.4-pro …)"
+echo "     ├─ cometapi-responses         Responses API (gpt-5.4-pro …)"
 echo "     ├─ cometapi-claude            Anthropic (claude-sonnet-4-6 …)"
 echo "     └─ cometapi-gemini            Google AI (gemini-3.1-pro …)"
 echo ""
@@ -618,10 +616,10 @@ echo "     openclaw models list --provider cometapi-claude    # list models"
 echo "     openclaw doctor                                    # diagnostics"
 echo ""
 echo "  ➕ Add a model (rerun with --add-model):"
-echo "     sh setup.sh --add-model cometapi-openai/gpt-5.2-chat-latest"
-echo "     sh setup.sh --add-model cometapi-openai-responses/gpt-5.4"
-echo "     sh setup.sh --add-model cometapi-claude/claude-opus-4-6"
-echo "     sh setup.sh --add-model cometapi-gemini/gemini-3.1-pro"
+echo "     curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- --add-model cometapi-openai/gpt-5.2-chat-latest"
+echo "     curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- --add-model cometapi-responses/gpt-5.4"
+echo "     curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- --add-model cometapi-claude/claude-opus-4-6"
+echo "     curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- --add-model cometapi-gemini/gemini-3.1-pro"
 echo ""
 echo "  🔗 Browse all models: https://www.cometapi.com/models/"
 echo "  📖 Full docs:        https://docs.cometapi.com/integrations/openclaw"
