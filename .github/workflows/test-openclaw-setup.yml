@@ -1,0 +1,108 @@
+name: Manual – Test OpenClaw setup scripts (multi-platform)
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to test'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - windows
+          - linux
+          - macos
+
+jobs:
+  # ── Windows: PowerShell script ─────────────────────────────────────────────
+  test-windows:
+    name: PowerShell on Windows
+    runs-on: windows-latest
+    if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'windows' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Prerequisites
+        run: node --version; pwsh --version
+        shell: pwsh
+
+      - name: Dry-run
+        run: pwsh openclaw/setup.ps1 -Key sk-testkey1234567890 -DryRun -SkipVerify
+        shell: pwsh
+
+      - name: Full install
+        run: pwsh openclaw/setup.ps1 -Key sk-testkey1234567890 -SkipVerify
+        shell: pwsh
+
+      - name: Assert .env written
+        run: |
+          $f = Join-Path $HOME ".openclaw\.env"
+          if (-not (Test-Path $f)) { throw ".env not found" }
+          if ((Get-Content $f -Raw) -notmatch 'COMETAPI_KEY=sk-testkey') { throw ".env content wrong" }
+          Write-Host "✅ .env OK"
+        shell: pwsh
+
+      - name: Assert all 4 providers
+        run: |
+          $cfg = Get-Content (Join-Path $HOME ".openclaw\openclaw.json") -Raw | ConvertFrom-Json
+          foreach ($p in @('cometapi-openai','cometapi-openai-responses','cometapi-claude','cometapi-gemini')) {
+            if ($cfg.models.providers.PSObject.Properties.Name -notcontains $p) { throw "Missing: $p" }
+            Write-Host "✅ $p"
+          }
+        shell: pwsh
+
+      - name: Idempotency
+        run: |
+          pwsh openclaw/setup.ps1 -Key sk-testkey1234567890 -SkipVerify
+          $count = (Get-Content (Join-Path $HOME ".openclaw\openclaw.json") -Raw | ConvertFrom-Json).models.providers.PSObject.Properties.Count
+          if ($count -ne 4) { throw "Expected 4 providers, got $count" }
+          Write-Host "✅ Idempotency OK"
+        shell: pwsh
+
+      - name: --add-model
+        run: |
+          pwsh openclaw/setup.ps1 -Key sk-testkey1234567890 -AddModel cometapi-openai/gpt-5-test -SkipVerify
+          $ids = (Get-Content (Join-Path $HOME ".openclaw\openclaw.json") -Raw | ConvertFrom-Json).models.providers.'cometapi-openai'.models | ForEach-Object { $_.id }
+          if ($ids -notcontains 'gpt-5-test') { throw "gpt-5-test not added" }
+          Write-Host "✅ --add-model OK"
+        shell: pwsh
+
+      - name: Rejects invalid key
+        run: |
+          pwsh openclaw/setup.ps1 -Key badkey -SkipVerify; $code = $LASTEXITCODE
+          if ($code -eq 0) { throw "Expected non-zero exit for invalid key" }
+          Write-Host "✅ Invalid key rejected"
+        shell: pwsh
+
+  # ── Linux ──────────────────────────────────────────────────────────────────
+  test-linux:
+    name: Bash on Linux
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'linux' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run full bash test suite
+        run: bash openclaw/tools/test_setup_cometapi.sh
+
+  # ── macOS ──────────────────────────────────────────────────────────────────
+  test-macos:
+    name: Bash on macOS
+    runs-on: macos-latest
+    if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run full bash test suite
+        run: bash openclaw/tools/test_setup_cometapi.sh
