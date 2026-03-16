@@ -4,10 +4,7 @@
   "postCreateCommand": "bash openclaw/.devcontainer/setup.sh",
   "customizations": {
     "vscode": {
-      "extensions": [
-        "ms-vscode.powershell",
-        "timonwong.shellcheck"
-      ],
+      "extensions": ["ms-vscode.powershell", "timonwong.shellcheck"],
       "settings": {
         "terminal.integrated.defaultProfile.linux": "bash"
       }
