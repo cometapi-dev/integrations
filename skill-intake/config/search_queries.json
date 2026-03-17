@@ -1,0 +1,44 @@
+[
+    {
+        "name": "topic-claude-skills",
+        "query": "topic:claude-skills archived:false fork:false",
+        "sort": "stars",
+        "order": "desc",
+        "per_page": 100
+    },
+    {
+        "name": "topic-copilot-skills",
+        "query": "topic:copilot-skills archived:false fork:false",
+        "sort": "stars",
+        "order": "desc",
+        "per_page": 100
+    },
+    {
+        "name": "topic-agent-skills",
+        "query": "topic:agent-skills archived:false fork:false",
+        "sort": "stars",
+        "order": "desc",
+        "per_page": 100
+    },
+    {
+        "name": "awesome-claude-skills",
+        "query": "\"awesome claude skills\" archived:false fork:false",
+        "sort": "stars",
+        "order": "desc",
+        "per_page": 50
+    },
+    {
+        "name": "skill-md-agent-repos",
+        "query": "\"SKILL.md\" \"agent skills\" archived:false fork:false",
+        "sort": "stars",
+        "order": "desc",
+        "per_page": 50
+    },
+    {
+        "name": "copilot-skill-skillmd",
+        "query": "copilot skill SKILL.md archived:false fork:false",
+        "sort": "stars",
+        "order": "desc",
+        "per_page": 50
+    }
+]

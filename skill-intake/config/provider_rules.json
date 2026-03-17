@@ -1,0 +1,131 @@
+[
+    {
+        "name": "gemini",
+        "match_any": [
+            "google.genai",
+            "x-goog-api-key",
+            "generativelanguage.googleapis.com",
+            "gemini-3-pro-image-preview",
+            "gemini-2.5-flash-image"
+        ],
+        "conversion_strategy": "direct-gemini-native",
+        "workspace_evidence": [
+            "docs/image/gemini/image-generation.md",
+            "example/image/python/gemini-3-pro-image.py"
+        ]
+    },
+    {
+        "name": "openai-image",
+        "match_any": [
+            "client.images.generate",
+            "/v1/images/generations",
+            "gpt-image-1.5",
+            "dall-e-3",
+            "openai(base_url",
+            "from openai import openai"
+        ],
+        "conversion_strategy": "direct-openai-compat",
+        "workspace_evidence": [
+            "example/image/python/gpt-image-1.5.py",
+            "example/image/python/dall-e-3.py"
+        ]
+    },
+    {
+        "name": "anthropic",
+        "match_any": [
+            "/v1/messages",
+            "client.messages.create",
+            "@anthropic-ai/sdk",
+            "anthropic.anthropic",
+            "anthropic(",
+            "claude_agent_sdk",
+            "from anthropic import"
+        ],
+        "conversion_strategy": "direct-anthropic-proxy",
+        "workspace_evidence": [
+            "docs/text/anthropic-messages_en.md"
+        ]
+    },
+    {
+        "name": "replicate",
+        "match_any": [
+            "/predictions",
+            "https://api.replicate.com",
+            "replicate.com",
+            "replicate.delivery",
+            "mcp.replicate.com",
+            "from replicate import",
+            "import replicate"
+        ],
+        "conversion_strategy": "direct-replicate-proxy",
+        "workspace_evidence": [
+            "example/image/python/black-forest-labs-flux-2-pro.py",
+            "example/image/shell/flux-kontext-max.sh"
+        ]
+    },
+    {
+        "name": "flux-provider-http",
+        "match_any": [
+            "/flux/v1/flux-2-pro",
+            "flux-2-pro",
+            "flux-2-max",
+            "flux-2-flex"
+        ],
+        "conversion_strategy": "provider-specific-http",
+        "workspace_evidence": [
+            "example/image/python/flux-2-pro.py",
+            "example/image/shell/flux-2-pro.sh"
+        ]
+    },
+    {
+        "name": "suno",
+        "match_any": [
+            "suno",
+            "/suno/submit",
+            "chirp-crow",
+            "text-to-music"
+        ],
+        "conversion_strategy": "provider-specific-http",
+        "workspace_evidence": [
+            "docs/music/suno_en.md",
+            "example/audio/python/suno_chirp_crow_extend_concat.py"
+        ]
+    },
+    {
+        "name": "video-api",
+        "match_any": [
+            "/v1/videos",
+            "sora-2",
+            "kling",
+            "veo3.1",
+            "text2video"
+        ],
+        "conversion_strategy": "provider-specific-http",
+        "workspace_evidence": [
+            "example/video/python/sora-2-pro.py",
+            "example/video/python/veo3.1.py"
+        ]
+    },
+    {
+        "name": "fal",
+        "match_any": [
+            "fal.ai",
+            "fal_client",
+            "@fal-ai/client"
+        ],
+        "conversion_strategy": "manual-research-required",
+        "workspace_evidence": []
+    },
+    {
+        "name": "local-code-only",
+        "match_any": [
+            "p5.js",
+            "remotion",
+            "canvas",
+            "ffmpeg",
+            "playwright"
+        ],
+        "conversion_strategy": "not-a-cometapi-fit",
+        "workspace_evidence": []
+    }
+]

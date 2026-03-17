@@ -13,6 +13,7 @@ yarn-error.log*
 # Logs
 *.log
 logs/
+.tmp/
 
 # Env / secrets
 .env
