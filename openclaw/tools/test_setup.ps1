@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 # =============================================================================
-# test_setup_ps1.ps1 — End-to-end tests for setup.ps1
-# Run with:  pwsh openclaw/tools/test_setup_ps1.ps1
+# test_setup.ps1 — End-to-end tests for setup.ps1
+# Run with:  pwsh openclaw/tools/test_setup.ps1
 # =============================================================================
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
@@ -249,8 +249,36 @@ $env:HOME = $savedHome12
 $env:PATH = $savedPath12
 Assert-Eq "12a: exits non-zero when openclaw missing" $true ($proc.ExitCode -ne 0)
 
-# ── Test 13: Real E2E — strip & restore real openclaw.json ───────────────────
-Write-Host "`n── Test 13: Real E2E (real openclaw.json on this machine) ──"
+# ── Test 13: Legacy provider rename migration ────────────────────────────────
+Write-Host "`n── Test 13: Legacy provider rename migration ──"
+Setup-Env
+@{
+    models = @{
+        mode = "merge"
+        providers = @{
+            "cometapi-openai-responses" = @{
+                baseUrl = "https://api.cometapi.com/v1"
+                apiKey = '${COMETAPI_KEY}'
+                api = "openai-responses"
+                models = @(
+                    @{ id = "gpt-5.4-pro"; name = "GPT-5.4 Pro" },
+                    @{ id = "o1-mini"; name = "o1-mini (user added)" }
+                )
+            }
+        }
+    }
+} | ConvertTo-Json -Depth 20 | Set-Content (Get-ConfigFile)
+
+$out13 = Invoke-Setup -Key "sk-legacyresp12345678"
+Assert-Contains "13a: migration message shown" $out13 "cometapi-openai-responses"
+$cfg13 = Get-Content (Get-ConfigFile) -Raw | ConvertFrom-Json
+Assert-Eq "13b: old provider removed" $false ($cfg13.models.providers.PSObject.Properties.Name -contains 'cometapi-openai-responses')
+Assert-Eq "13c: new provider exists" "openai-responses" $cfg13.models.providers.'cometapi-responses'.api
+$ids13 = @($cfg13.models.providers.'cometapi-responses'.models | ForEach-Object { $_.id })
+Assert-Eq "13d: user-added o1-mini preserved" $true ($ids13 -contains 'o1-mini')
+
+# ── Test 14: Real E2E — strip & restore real openclaw.json ───────────────────
+Write-Host "`n── Test 14: Real E2E (real openclaw.json on this machine) ──"
 $realConfigPath = Join-Path $HOME ".openclaw" "openclaw.json"
 $backupPath     = Join-Path $HOME ".openclaw" "openclaw.json.ps1test_backup"
 
@@ -266,7 +294,7 @@ if (Test-Path $realConfigPath) {
     }
     $realCfg | ConvertTo-Json -Depth 20 | Set-Content $realConfigPath
     $before = @($realCfg.models.providers.PSObject.Properties | Where-Object { $_.Name -like 'cometapi-*' }).Count
-    Assert-Eq "13a: cometapi providers stripped from real config" 0 $before
+    Assert-Eq "14a: cometapi providers stripped from real config" 0 $before
 
     # Run real script with real key (no -SkipVerify)
     $realKey = $env:COMETAPI_KEY
@@ -274,14 +302,14 @@ if (Test-Path $realConfigPath) {
 
     if ($realKey) {
         $realOut = pwsh -NonInteractive -NoProfile -File $SetupScript -Key $realKey 2>&1 | Out-String
-        Assert-Contains "13b: API key verified" $realOut "verified"
-        Assert-Contains "13c: all 4 providers added" $realOut "cometapi-gemini"
+        Assert-Contains "14b: API key verified" $realOut "verified"
+        Assert-Contains "14c: all 4 providers added" $realOut "cometapi-gemini"
 
         $finalCfg = Get-Content $realConfigPath -Raw | ConvertFrom-Json
         $afterCount = @($finalCfg.models.providers.PSObject.Properties | Where-Object { $_.Name -like 'cometapi-*' }).Count
-        Assert-Eq "13d: 4 cometapi providers in real config after setup" 4 $afterCount
+        Assert-Eq "14d: 4 cometapi providers in real config after setup" 4 $afterCount
     } else {
-        Write-Host "  ⚠️  Skipping 13b-13d: no real API key found" -ForegroundColor Yellow
+        Write-Host "  ⚠️  Skipping 14b-14d: no real API key found" -ForegroundColor Yellow
     }
 
     # Restore backup
@@ -289,8 +317,27 @@ if (Test-Path $realConfigPath) {
     Remove-Item $backupPath -Force
     Write-Host "  ↩  Real config restored" -ForegroundColor DarkGray
 } else {
-    Write-Host "  ⚠️  Skipping Test 13: no real openclaw.json found" -ForegroundColor Yellow
+    Write-Host "  ⚠️  Skipping Test 14: no real openclaw.json found" -ForegroundColor Yellow
 }
+
+# ── Test 15: -AddModel without key in NonInteractive mode ───────────────────
+Write-Host "`n── Test 15: -AddModel without key in NonInteractive mode ──"
+$noKeyHome14 = Join-Path $TestDir "noKeyAddModelHome14"
+New-Item -ItemType Directory -Force (Join-Path $noKeyHome14 ".openclaw") | Out-Null
+$helper14 = Join-Path $TestDir "missing_key_addmodel_14.ps1"
+$helper14Content = @"
+`$env:COMETAPI_KEY = `$null
+& ([scriptblock]::Create((Get-Content '$SetupScript' -Raw))) -AddModel 'cometapi-openai/gpt-5.2-chat-latest'
+"@
+$helper14Content | Set-Content $helper14
+$savedHome14 = $env:HOME
+$env:HOME = $noKeyHome14
+$output14 = pwsh -NonInteractive -NoProfile -File $helper14 2>&1 | Out-String
+$env:HOME = $savedHome14
+$exit14 = $LASTEXITCODE
+Assert-Eq "15a: exits non-zero when -AddModel has no key" $true ($exit14 -ne 0)
+Assert-Contains "15b: shows missing key message" $output14 "No API key provided"
+Assert-Contains "15c: shows -Key + -AddModel example" $output14 "-Key 'sk-xxxxx' -AddModel 'cometapi-openai/gpt-5.2-chat-latest'"
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
 Write-Host ""

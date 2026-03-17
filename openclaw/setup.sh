@@ -1,17 +1,17 @@
 #!/bin/sh
 # =============================================================================
-# setup_cometapi.sh — One-click CometAPI provider setup for OpenClaw
+# setup.sh — One-click CometAPI provider setup for OpenClaw
 #
 # Adds CometAPI as a model provider to your local OpenClaw installation.
 # Does NOT install OpenClaw itself.
 #
 # Usage:
-#   curl -fsSL https://docs.cometapi.com/setup-openclaw.sh | sh
-#   sh setup_cometapi.sh
-#   sh setup_cometapi.sh --key sk-xxxxx
-#   sh setup_cometapi.sh --add-model cometapi-openai/gpt-5.2-chat-latest
-#   sh setup_cometapi.sh --dry-run
-#   sh setup_cometapi.sh --help
+#   curl -fsSL https://apidoc.cometapi.com/setup-openclaw.sh | sh
+#   sh setup.sh
+#   sh setup.sh --key sk-xxxxx
+#   sh setup.sh --add-model cometapi-openai/gpt-5.2-chat-latest
+#   sh setup.sh --dry-run
+#   sh setup.sh --help
 #
 # What it does:
 #   1. Verifies OpenClaw + Node.js are installed
@@ -22,13 +22,13 @@
 #   5. Restarts the OpenClaw gateway
 #
 # Platform:    macOS, Linux, WSL, Git Bash (POSIX sh compatible)
-# Windows:     Use setup_cometapi.ps1 for native PowerShell
+# Windows:     Use setup.ps1 for native PowerShell
 # Deps:        sh (POSIX), node >= 18 (guaranteed by OpenClaw)
 # No Python, jq, sed -i, or GNU/BSD-specific tools required.
 #
 # References:
-#   CometAPI docs          https://docs.cometapi.com
-#   CometAPI + OpenClaw    https://docs.cometapi.com/integrations/openclaw
+#   CometAPI docs          https://apidoc.cometapi.com
+#   CometAPI + OpenClaw    https://apidoc.cometapi.com/integrations/openclaw
 #   OpenClaw               https://openclaw.ai
 #   Get API key            https://www.cometapi.com/console/token
 # =============================================================================
@@ -86,7 +86,7 @@ Options:
 
 Provider names for --add-model:
   cometapi-openai            OpenAI Chat Completions
-  cometapi-responses           OpenAI Responses API
+  cometapi-responses         OpenAI Responses API
   cometapi-claude            Anthropic Messages
   cometapi-gemini            Google Generative AI
 
@@ -95,12 +95,15 @@ Environment variables:
   NO_COLOR       Disable colored output (https://no-color.org)
 
 Examples:
-  curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh
   curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- --key sk-xxxxx
+  curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- --key sk-xxxxx --add-model cometapi-openai/gpt-5.2-chat-latest
   curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- --add-model cometapi-openai/gpt-5.2-chat-latest
+                       # after initial setup; reuses ~/.openclaw/.env if COMETAPI_KEY is already saved
 
-Windows (PowerShell): irm https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1 | iex
-Full docs: https://docs.cometapi.com/integrations/openclaw
+Windows (PowerShell):
+  powershell -c "irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1' | iex"
+  powershell -c "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -Key 'sk-xxxxx'"
+Full docs: https://apidoc.cometapi.com/integrations/openclaw
 HELPEOF
   exit 0
 }
@@ -200,14 +203,52 @@ echo ""
 detail "Get your key at: ${_KEY_URL}"
 echo ""
 
-# Priority: --key flag > COMETAPI_KEY env > interactive prompt
-COMETAPI_KEY="${ARG_KEY:-${COMETAPI_KEY:-}}"
+read_saved_key_from_env_file() {
+  [ -f "${ENV_FILE}" ] || return 1
+  _saved_key=""
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    case "$_line" in
+      COMETAPI_KEY=*) _saved_key="${_line#COMETAPI_KEY=}" ;;
+    esac
+  done < "${ENV_FILE}"
+  [ -n "${_saved_key}" ] || return 1
+  printf '%s' "${_saved_key}"
+}
+
+# Priority: --key flag > COMETAPI_KEY env > saved ~/.openclaw/.env > interactive prompt
+_ENV_KEY="${COMETAPI_KEY:-}"
+_SAVED_ENV_KEY=""
+if [ -z "${ARG_KEY}" ] && [ -z "${_ENV_KEY}" ]; then
+  _SAVED_ENV_KEY="$(read_saved_key_from_env_file || true)"
+fi
+COMETAPI_KEY="${ARG_KEY:-${_ENV_KEY:-${_SAVED_ENV_KEY:-}}}"
+
+_KEY_SOURCE="prompt"
+if [ -n "${ARG_KEY}" ]; then
+  _KEY_SOURCE="flag"
+elif [ -n "${_ENV_KEY}" ]; then
+  _KEY_SOURCE="env"
+elif [ -n "${_SAVED_ENV_KEY}" ]; then
+  _KEY_SOURCE="env_file"
+fi
+
+if [ "${_KEY_SOURCE}" = "env_file" ]; then
+  info "Using saved COMETAPI_KEY from ${ENV_FILE}"
+fi
 
 _IS_INTERACTIVE=0
 if [ -z "${COMETAPI_KEY}" ]; then
   if [ ! -t 0 ]; then
     err "No API key provided and stdin is not a terminal (piped mode)."
-    echo "   Use: curl ... | sh -s -- --key sk-xxxxx"
+    echo ""
+    echo "   This script can reuse ${ENV_FILE} if COMETAPI_KEY is already saved there."
+    if [ -n "${ADD_MODELS}" ]; then
+      _example_model="${ADD_MODELS%%,*}"
+      echo "   If this is your first run, pass --key together with --add-model:"
+      echo "     curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- --key sk-xxxxx --add-model ${_example_model}"
+    else
+      echo "   Use: curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- --key sk-xxxxx"
+    fi
     exit 1
   fi
   _IS_INTERACTIVE=1
@@ -488,13 +529,28 @@ const BASE_URL_GEMINI     = process.env._SETUP_BASE_URL_GEMINI;
     }
   }
 
-  // Migrate: rename cometapi-google → cometapi-gemini if present
+  // Migrate legacy provider names if present
   if (!config.models) config.models = {};
   if (!config.models.providers) config.models.providers = {};
   if (config.models.providers["cometapi-google"] && !config.models.providers["cometapi-gemini"]) {
     config.models.providers["cometapi-gemini"] = config.models.providers["cometapi-google"];
     delete config.models.providers["cometapi-google"];
     console.log("     🔄 Migrated: cometapi-google → cometapi-gemini");
+  }
+  if (config.models.providers["cometapi-openai-responses"]) {
+    if (!config.models.providers["cometapi-responses"]) {
+      config.models.providers["cometapi-responses"] = config.models.providers["cometapi-openai-responses"];
+      console.log("     🔄 Migrated: cometapi-openai-responses → cometapi-responses");
+    } else {
+      var legacyResp = config.models.providers["cometapi-openai-responses"];
+      var currentResp = config.models.providers["cometapi-responses"];
+      var seenResp = {};
+      (currentResp.models || []).forEach(function(m) { seenResp[m.id] = true; });
+      var migratedRespExtras = (legacyResp.models || []).filter(function(m) { return !seenResp[m.id]; });
+      currentResp.models = (currentResp.models || []).concat(migratedRespExtras);
+      console.log("     🔄 Merged legacy provider: cometapi-openai-responses → cometapi-responses");
+    }
+    delete config.models.providers["cometapi-openai-responses"];
   }
 
   var original = JSON.stringify(config);
@@ -615,12 +671,12 @@ echo "     openclaw models status                            # check auth"
 echo "     openclaw models list --provider cometapi-claude    # list models"
 echo "     openclaw doctor                                    # diagnostics"
 echo ""
-echo "  ➕ Add a model (rerun with --add-model):"
+echo "  ➕ Add a model later (reuses ~/.openclaw/.env if available):"
 echo "     curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- --add-model cometapi-openai/gpt-5.2-chat-latest"
 echo "     curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- --add-model cometapi-responses/gpt-5.4"
 echo "     curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- --add-model cometapi-claude/claude-opus-4-6"
 echo "     curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.sh | sh -s -- --add-model cometapi-gemini/gemini-3.1-pro"
 echo ""
 echo "  🔗 Browse all models: https://www.cometapi.com/models/"
-echo "  📖 Full docs:        https://docs.cometapi.com/integrations/openclaw"
+echo "  📖 Full docs:        https://apidoc.cometapi.com/integrations/openclaw"
 echo ""

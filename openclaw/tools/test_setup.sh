@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# test_setup_cometapi.sh — End-to-end tests for setup_cometapi.sh
+# test_setup.sh — End-to-end tests for setup.sh
 # Dependencies: bash, node (same as the setup script itself)
 # Cross-platform: macOS + Linux
 # =============================================================================
@@ -97,22 +97,32 @@ run_setup() {
 
 # Run with --key flag instead of env var
 run_setup_flag() {
-  HOME="${FAKE_HOME}" PATH="${FAKE_BIN}:${PATH}" \
+  env -u COMETAPI_KEY \
+    HOME="${FAKE_HOME}" PATH="${FAKE_BIN}:${PATH}" \
     _SETUP_SKIP_VERIFY=1 \
     sh "${SETUP_SCRIPT}" --key "$1" 2>&1
 }
 
 # Run with arbitrary extra args
 run_setup_args() {
-  HOME="${FAKE_HOME}" PATH="${FAKE_BIN}:${PATH}" \
+  env -u COMETAPI_KEY \
+    HOME="${FAKE_HOME}" PATH="${FAKE_BIN}:${PATH}" \
     _SETUP_SKIP_VERIFY=1 \
     sh "${SETUP_SCRIPT}" "$@" 2>&1
+}
+
+# Run through the non-terminal stdin path: sh -s -- ... < setup.sh
+run_setup_piped_args() {
+  env -u COMETAPI_KEY \
+    HOME="${FAKE_HOME}" PATH="${FAKE_BIN}:${PATH}" \
+    _SETUP_SKIP_VERIFY=1 \
+    sh -s -- "$@" < "${SETUP_SCRIPT}" 2>&1
 }
 
 # ═════════════════════════════════════════════════════════════════════════
 echo ""
 echo "═══════════════════════════════════════════════════════════"
-echo "  Test Suite: setup_cometapi.sh v2.0 (POSIX sh edition)"
+echo "  Test Suite: setup.sh v2.0 (POSIX sh edition)"
 echo "═══════════════════════════════════════════════════════════"
 
 # ── Test 1: Fresh install — no existing .env or openclaw.json ────────────
@@ -531,6 +541,15 @@ cat > "${FAKE_HOME}/.openclaw/openclaw.json" <<'OLDGOOGLE'
   "models": {
     "mode": "merge",
     "providers": {
+      "cometapi-openai-responses": {
+        "baseUrl": "https://api.cometapi.com/v1",
+        "apiKey": "${COMETAPI_KEY}",
+        "api": "openai-responses",
+        "models": [
+          {"id": "gpt-5.4-pro", "name": "GPT-5.4 Pro"},
+          {"id": "o1-mini", "name": "o1-mini (user added)"}
+        ]
+      },
       "cometapi-google": {
         "baseUrl": "https://api.cometapi.com/v1beta",
         "apiKey": "${COMETAPI_KEY}",
@@ -566,6 +585,21 @@ USER_FLASH="$(node -e "
 ")"
 assert_eq "20d: user model gemini-2.0-flash preserved after migration" "true" "${USER_FLASH}"
 
+HAS_OLD_RESP="$(json_has_key "${FAKE_HOME}/.openclaw/openclaw.json" "models.providers.cometapi-openai-responses")"
+assert_eq "20e: cometapi-openai-responses removed" "false" "${HAS_OLD_RESP}"
+
+assert_json_field "20f: cometapi-responses exists after migration" \
+  "${FAKE_HOME}/.openclaw/openclaw.json" \
+  "models.providers.cometapi-responses.api" \
+  "openai-responses"
+
+USER_O1="$(node -e "
+  const d = JSON.parse(require('fs').readFileSync('${FAKE_HOME}/.openclaw/openclaw.json','utf-8'));
+  const models = d.models.providers['cometapi-responses'].models;
+  process.stdout.write(String(models.some(m => m.id === 'o1-mini')));
+")"
+assert_eq "20g: user model o1-mini preserved after responses migration" "true" "${USER_O1}"
+
 # ── Test 21: --add-model dedup — adding a model that already exists ──────
 echo ""
 echo "── Test 21: --add-model deduplication ──"
@@ -587,6 +621,14 @@ echo "── Test 22: --help includes --add-model ──"
 OUTPUT22="$(HOME="${FAKE_HOME}" PATH="${FAKE_BIN}:${PATH}" sh "${SETUP_SCRIPT}" --help 2>&1)"
 assert_contains "22a: help shows --add-model" "${OUTPUT22}" "--add-model"
 assert_contains "22b: help shows cometapi-gemini" "${OUTPUT22}" "cometapi-gemini"
+
+# ── Test 23: piped --add-model without key gives actionable error ──────
+echo ""
+echo "── Test 23: piped --add-model without key ──"
+setup_env
+OUTPUT23="$(run_setup_piped_args --add-model cometapi-openai/gpt-5.2-chat-latest 2>&1 || true)"
+assert_contains "23a: missing key error shown" "${OUTPUT23}" "No API key provided"
+assert_contains "23b: shows --key + --add-model example" "${OUTPUT23}" "--key sk-xxxxx --add-model cometapi-openai/gpt-5.2-chat-latest"
 
 # ═════════════════════════════════════════════════════════════════════════
 echo ""

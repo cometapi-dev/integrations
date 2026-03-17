@@ -25,27 +25,31 @@
     Show what would be changed without writing any files.
 
 .EXAMPLE
-    irm https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1 | iex
+    powershell -c "irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1' | iex"
     # Interactive prompt for API key
 
 .EXAMPLE
-    & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -Key sk-xxxxx
+    powershell -c "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -Key 'sk-xxxxx'"
     # Non-interactive
 
 .EXAMPLE
-    & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -AddModel cometapi-openai/gpt-5.2-chat-latest
-    # Add a model to a provider
+    powershell -c "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -Key 'sk-xxxxx' -AddModel 'cometapi-openai/gpt-5.2-chat-latest'"
+    # First run or CI: add a model with an explicit key
 
 .EXAMPLE
-    & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -DryRun
+    powershell -c "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -AddModel 'cometapi-openai/gpt-5.2-chat-latest'"
+    # After initial setup: reuses ~/.openclaw/.env if COMETAPI_KEY is already saved there
+
+.EXAMPLE
+    powershell -c "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -DryRun"
     # Preview changes without writing
 
 .EXAMPLE
-    & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -Key sk-testkey1234567890 -SkipVerify
+    powershell -c "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -Key 'sk-testkey1234567890' -SkipVerify"
     # Skip API verification (useful in CI/test environments)
 
 .LINK
-    https://docs.cometapi.com/integrations/openclaw
+    https://apidoc.cometapi.com/integrations/openclaw
 #>
 
 [CmdletBinding()]
@@ -137,10 +141,40 @@ Write-Host ""
 Write-Host "     Get your key at: $keyUrl" -ForegroundColor DarkGray
 Write-Host ""
 
-# Priority: -Key param > $env:COMETAPI_KEY > interactive prompt
-$apiKey = if ($Key) { $Key } elseif ($env:COMETAPI_KEY) { $env:COMETAPI_KEY } else { "" }
+function Get-SavedCometApiKey {
+    if (-not (Test-Path $EnvFile -PathType Leaf)) { return $null }
+    $line = @(Get-Content $EnvFile | Where-Object { $_ -match '^COMETAPI_KEY=' } | Select-Object -Last 1)
+    if (-not $line) { return $null }
+    return ($line -replace '^COMETAPI_KEY=', '')
+}
+
+# Priority: -Key param > $env:COMETAPI_KEY > saved ~/.openclaw/.env > interactive prompt
+$envKey = $env:COMETAPI_KEY
+$savedEnvKey = if ($Key -or $envKey) { $null } else { Get-SavedCometApiKey }
+$apiKey = if ($Key) { $Key } elseif ($envKey) { $envKey } elseif ($savedEnvKey) { $savedEnvKey } else { "" }
+$keySource = if ($Key) { 'param' } elseif ($envKey) { 'env' } elseif ($savedEnvKey) { 'envfile' } else { 'prompt' }
 
 $isInteractive = -not $apiKey
+
+if ($keySource -eq 'envfile') {
+    Write-Info "Using saved COMETAPI_KEY from $EnvFile"
+}
+
+function Show-MissingKeyNonInteractive {
+    Write-Err "No API key provided and PowerShell is in NonInteractive mode."
+    Write-Host ""
+    Write-Host "   This script can reuse $EnvFile if COMETAPI_KEY is already saved there."
+    if ($AddModel.Count -gt 0) {
+        $exampleModel = $AddModel[0]
+        Write-Host "   If this is your first run, pass -Key together with -AddModel:"
+        Write-Host ('     powershell -c "& ([scriptblock]::Create((irm ''https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1''))) -Key ''sk-xxxxx'' -AddModel ''' + $exampleModel + '''"')
+    } else {
+        Write-Host "   Use:"
+        Write-Host '     powershell -c "& ([scriptblock]::Create((irm ''https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1''))) -Key ''sk-xxxxx''"'
+    }
+    Write-Host ""
+    exit 1
+}
 
 # ─── Key input + format validation (interactive: up to 3 attempts) ──────────
 $keyAttempts = 0
@@ -148,7 +182,11 @@ $maxAttempts = 3
 
 while ($true) {
     if ($isInteractive) {
-        $apiKey = Read-Host "  🔐 Enter your CometAPI API key (sk-…)"
+        try {
+            $apiKey = Read-Host "  🔐 Enter your CometAPI API key (sk-…)"
+        } catch {
+            Show-MissingKeyNonInteractive
+        }
     }
 
     $keyAttempts++
@@ -330,13 +368,27 @@ if (fs.existsSync(CONFIG_FILE)) {
   }
 }
 
-// Migrate: rename cometapi-google → cometapi-gemini if present
+// Migrate legacy provider names if present
 if (!config.models) config.models = {};
 if (!config.models.providers) config.models.providers = {};
 if (config.models.providers["cometapi-google"] && !config.models.providers["cometapi-gemini"]) {
   config.models.providers["cometapi-gemini"] = config.models.providers["cometapi-google"];
   delete config.models.providers["cometapi-google"];
   console.log("     🔄 Migrated: cometapi-google → cometapi-gemini");
+}
+if (config.models.providers["cometapi-openai-responses"]) {
+    if (!config.models.providers["cometapi-responses"]) {
+        config.models.providers["cometapi-responses"] = config.models.providers["cometapi-openai-responses"];
+        console.log("     🔄 Migrated: cometapi-openai-responses → cometapi-responses");
+    } else {
+        const legacyResp = config.models.providers["cometapi-openai-responses"];
+        const currentResp = config.models.providers["cometapi-responses"];
+        const seenResp = new Set((currentResp.models || []).map(m => m.id));
+        const migratedRespExtras = (legacyResp.models || []).filter(m => !seenResp.has(m.id));
+        currentResp.models = [...(currentResp.models || []), ...migratedRespExtras];
+        console.log("     🔄 Merged legacy provider: cometapi-openai-responses → cometapi-responses");
+    }
+    delete config.models.providers["cometapi-openai-responses"];
 }
 
 const original = JSON.stringify(config);
@@ -445,13 +497,12 @@ Write-Host "     openclaw models status                            # check auth"
 Write-Host "     openclaw models list --provider cometapi-claude    # list models"
 Write-Host "     openclaw doctor                                    # diagnostics"
 Write-Host ""
-Write-Host "  ➕ Add a model (rerun with -AddModel):"
-Write-Host "     irm https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1 | iex  # then use -AddModel:"
-Write-Host "     & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -AddModel cometapi-openai/gpt-5-latest"
-Write-Host "     & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -AddModel cometapi-responses/gpt-5-latest"
-Write-Host "     & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -AddModel cometapi-claude/claude-opus-4-5"
-Write-Host "     & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1'))) -AddModel cometapi-gemini/gemini-3.1-ultra"
+Write-Host "  ➕ Add a model later (reuses ~/.openclaw/.env if available):"
+Write-Host '     powershell -c "& ([scriptblock]::Create((irm ''https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1''))) -AddModel ''cometapi-openai/gpt-5-latest''"'
+Write-Host '     powershell -c "& ([scriptblock]::Create((irm ''https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1''))) -AddModel ''cometapi-responses/gpt-5-latest''"'
+Write-Host '     powershell -c "& ([scriptblock]::Create((irm ''https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1''))) -AddModel ''cometapi-claude/claude-opus-4-5''"'
+Write-Host '     powershell -c "& ([scriptblock]::Create((irm ''https://raw.githubusercontent.com/cometapi-dev/integrations/main/openclaw/setup.ps1''))) -AddModel ''cometapi-gemini/gemini-3.1-ultra''"'
 Write-Host ""
 Write-Host "  🔗 Browse all models: https://api.cometapi.com/models"
-Write-Host "  📖 Full docs:        https://docs.cometapi.com/integrations/openclaw"
+Write-Host "  📖 Full docs:        https://apidoc.cometapi.com/integrations/openclaw"
 Write-Host ""
