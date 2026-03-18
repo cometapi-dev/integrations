@@ -1,9 +1,14 @@
 ---
 name: cometapi-image-gen
 description: |
-  Generate images through CometAPI using Gemini, GPT Image, DALL-E, or Flux models.
-  Use this skill when the user asks for illustrations, concept art, icons, hero images,
-  posters, product renders, visual mockups, or multi-reference image composition.
+  Generate images through CometAPI using multiple model backends — Gemini, GPT Image,
+  DALL-E, and Flux — with a single portable helper script. Use this skill whenever the
+  user mentions illustrations, concept art, icons, hero images, posters, banners,
+  product renders, visual mockups, social media graphics, thumbnails, book covers,
+  multi-reference composition, or any task that produces a visual asset. Also trigger
+  when the user wants to compare outputs from different image models or needs a specific
+  provider but wants to stay on CometAPI. If the user mentions "image" and an AI model
+  in the same breath, this skill almost certainly applies.
 compatibility:
   requires:
     - Python 3
@@ -12,52 +17,87 @@ compatibility:
 
 # CometAPI Image Generation
 
-## When to Use This Skill
+This skill routes image generation through CometAPI so you can switch between Gemini,
+GPT Image, DALL-E, and Flux without changing your workflow. A single helper script
+handles the provider-specific quirks — different response formats, async polling,
+base64 decoding — so the agent just picks a model and runs the command.
 
-- The user wants a new image, illustration, render, or visual concept.
-- The user wants a model-specific image provider but the project should stay on CometAPI.
-- The task benefits from repeatable image generation via a helper script instead of ad hoc API calls.
+## Model Selection
 
-## Default Model Strategy
+Different models have different strengths. Pick based on what the user needs:
 
-- Default to `gemini-3-pro-image-preview` unless the user explicitly asks for another image model.
-- Use `gpt-image-1.5` for OpenAI-compatible image generation that usually returns inline image bytes.
-- Use `dall-e-3` when the user specifically wants DALL-E style compatibility.
-- Use `flux-2-pro` for Flux workflows that need CometAPI's Replicate-compatible route.
+| Model | Best for | Why |
+|-------|----------|-----|
+| `gemini-3-pro-image-preview` (default) | General illustration, multi-reference composition | Highest quality, accepts local file references |
+| `gpt-image-1.5` | OpenAI-style generation | Returns inline base64, good for programmatic pipelines |
+| `dall-e-3` | DALL-E aesthetic | Strong at creative interpretation of prompts |
+| `flux-2-pro` | Photorealistic product shots | Replicate-compatible async workflow, URL-based references |
 
-## How to Use
+Default to Gemini unless the user explicitly asks for another model — it gives the
+best balance of quality and flexibility, especially for reference-based work.
 
-Run the helper script from this skill folder:
+## Usage Examples
 
+**Example 1 — Simple prompt-to-image:**
 ```bash
 python scripts/generate_image.py "A retro-futurist travel poster for Shanghai"
-python scripts/generate_image.py --model gpt-image-1.5 "A cute baby sea otter" assets/otter.png
-python scripts/generate_image.py --model dall-e-3 --size 1024x1024 "A cinematic sci-fi skyline at sunset" output/dalle-city.png
-python scripts/generate_image.py --model flux-2-pro --aspect-ratio 16:9 --resolution "2 MP" "Photoreal product shot of a premium espresso machine"
-python scripts/generate_image.py --reference design/mockup.png --reference assets/logo.png "Turn these references into a launch poster"
 ```
+Output: Saves a PNG with a timestamped filename + sidecar metadata JSON.
+
+**Example 2 — Specific model with output path:**
+```bash
+python scripts/generate_image.py --model gpt-image-1.5 "A cute baby sea otter" assets/otter.png
+```
+Output: Decodes base64 response and saves to `assets/otter.png`.
+
+**Example 3 — Multi-reference composition (Gemini):**
+```bash
+python scripts/generate_image.py \
+  --reference design/mockup.png \
+  --reference assets/logo.png \
+  "Turn these references into a launch poster"
+```
+Output: Gemini reads the reference images and generates a composed result.
+
+**Example 4 — Flux photorealistic with aspect ratio:**
+```bash
+python scripts/generate_image.py --model flux-2-pro --aspect-ratio 16:9 \
+  --resolution "2 MP" "Photoreal product shot of a premium espresso machine"
+```
+Output: Submits an async prediction, polls until complete, downloads the result.
+
+## How the Helper Works
+
+The script detects which model family you're using and calls the right CometAPI endpoint:
+
+- **Gemini** → native `POST /v1beta/models/{model}:generateContent` with `x-goog-api-key` header.
+  Accepts local files (base64-encoded inline) and URLs. Saves the first image part from the response.
+- **GPT Image** → OpenAI-compat `POST /v1/images/generations`. Returns `b64_json` which the helper decodes.
+- **DALL-E** → OpenAI-compat endpoint. May return a hosted URL; the helper downloads it automatically.
+- **Flux** → Replicate-compat `POST /v1/predictions`. Async workflow: submit, poll, download first output asset.
+
+The helper uses only the Python standard library so it stays portable after the skill
+folder is copied into any agent ecosystem.
 
 ## Reference Images
 
-- Gemini accepts local file paths or remote URLs through `--reference`.
-- Flux accepts URL-based references only. If the user gives local files, upload them somewhere accessible first or switch to Gemini.
+Gemini accepts local file paths or remote URLs through `--reference`. The helper reads
+local files and base64-encodes them into the request body.
+
+Flux accepts URL-based references only. If the user gives local files and wants Flux,
+either upload them somewhere accessible first or switch to Gemini.
 
 ## Output Behavior
 
-- Gemini saves the first generated image locally and may also print model text output.
-- GPT Image models may return `b64_json`, which the helper decodes to a file.
-- DALL-E may return a hosted image URL; the helper downloads it automatically.
-- Flux submits an async prediction, polls CometAPI until completion, then downloads the first output asset.
+Every run produces:
+1. The generated image file (PNG or format returned by the model).
+2. A sidecar metadata JSON with the prompt, model, timestamp, and output path.
 
-## Operational Rules
+If no `--output` path is given, the helper creates a timestamped filename in the
+current working directory. Keep outputs in the workspace unless the user says otherwise.
 
-1. Use the helper instead of embedding raw API code in the conversation when the user wants an actual image artifact.
-2. Keep outputs inside the user's workspace unless they ask for a different destination.
-3. If the user does not provide an output path, let the helper create a timestamped filename in the current working directory.
-4. If the user asks for a specific provider model that CometAPI supports, pass it through `--model` instead of changing services.
-5. Authentication must come from `COMETAPI_KEY`.
+## Related Skills
 
-## Notes for Maintainers
-
-- The helper intentionally uses only the Python standard library so the copied skill remains portable.
-- This skill is the baseline pattern for future CometAPI skills such as video, music, TTS, and image editing.
+- For Nano Banana-style workflows (edit, compose, batch variants with Gemini Pro or Flash), use `cometapi-nano-banana`.
+- For structured infographics (timelines, comparisons, data stories), use `cometapi-infographics`.
+- This skill is the right choice when the user wants a straightforward prompt-to-image generation with model flexibility.

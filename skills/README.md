@@ -2,43 +2,35 @@
 
 Portable `SKILL.md` packages for AI assistants that need a clean, reusable way to call CometAPI.
 
-These skills are designed to stay generic instead of coupling themselves to a single host like OpenClaw. Each skill keeps its helper scripts alongside `SKILL.md` so the same folder can be copied into different agent ecosystems.
+These skills follow the [Anthropic skill-creator best practices](https://github.com/anthropics/skills/tree/main/skills/skill-creator): pushy descriptions for reliable triggering, progressive disclosure to keep context lean, explain-why writing style over rigid MUSTs, and bundled helper scripts so every invocation doesn't reinvent the wheel.
 
-## Goals
+## Design Principles
 
-- Work across GitHub Copilot, Claude Code, Cursor, Gemini CLI, Codex/OpenCode, and similar tools.
-- Hide provider-specific API quirks behind CometAPI.
-- Keep authentication consistent with `COMETAPI_KEY`.
-- Prefer self-contained helper scripts that can run after the skill folder is copied elsewhere.
+- **Trigger reliably.** Descriptions are deliberately "pushy" — they list specific user phrases, adjacent domains, and scenarios to combat the tendency of AI agents to undertrigger skills.
+- **Explain why, not just what.** Instructions explain the reasoning behind each step so the agent can generalize to novel situations rather than follow rigid rules.
+- **Progressive disclosure.** SKILL.md stays under 500 lines. Heavy resources go into `references/` and load on demand.
+- **Portable across hosts.** Works in GitHub Copilot, Claude Code, Cursor, Gemini CLI, Codex/OpenCode, and similar tools.
+- **Self-contained helpers.** Scripts use only the Python standard library and read credentials from `COMETAPI_KEY`.
 
-## Layout
+## Skill Anatomy
 
 ```text
-skills/
-├── README.md
-├── _template/
-│   └── SKILL.md
-├── cometapi-image-gen/
-│   ├── SKILL.md
-│   └── scripts/
-│       └── generate_image.py
-├── cometapi-infographics/
-│   ├── SKILL.md
-│   └── scripts/
-│       └── generate_infographic.py
-└── cometapi-nano-banana/
-    ├── SKILL.md
-    └── scripts/
-        └── generate_image.py
+skill-name/
+├── SKILL.md          (required — agent instructions + YAML frontmatter)
+├── scripts/          (executable helpers for deterministic tasks)
+├── assets/           (templates, system prompts, icons)
+├── references/       (docs loaded into context on demand)
+└── evals/            (test cases — evals.json)
 ```
 
-Planned next skills:
+## Available Skills
 
-- `cometapi-video-gen`
-- `cometapi-music-gen`
-- `cometapi-tts`
-- `cometapi-image-edit`
-- `cometapi-multimodal`
+| Skill | What it does | Model |
+|-------|-------------|-------|
+| **`cometapi-image-gen`** | Multi-model image generation (Gemini, GPT Image, DALL-E, Flux) | User's choice |
+| **`cometapi-nano-banana`** | Gemini image gen/edit/compose — Pro for quality, Flash for speed | `gemini-3-pro-image-preview` / `gemini-3.1-flash-image-preview` |
+| **`cometapi-infographics`** | Structured infographic generation with fact grounding | `gemini-3-pro-image-preview` |
+| **`cometapi-agent-designer`** | Multi-agent architecture planning with Mermaid diagrams | `gpt-4.1-mini` |
 
 ## Install Paths
 
@@ -60,45 +52,12 @@ mkdir -p .github/skills
 cp -R cometapi-dev/integrations/skills/cometapi-image-gen .github/skills/
 ```
 
-## Available Skills
+## Authoring Guide
 
-### `cometapi-image-gen`
+Key rules for writing a new skill:
 
-Image generation through CometAPI with one agent-facing workflow covering:
-
-- `gemini-3-pro-image-preview`
-- `gpt-image-1.5`
-- `dall-e-3`
-- `flux-2-pro`
-
-The helper script uses Python's standard library only, so the copied skill does not need extra packages before it can run.
-
-### `cometapi-nano-banana`
-
-Specialized Gemini image generation, editing, and multi-image composition through CometAPI.
-
-- Based on the popular Nano Banana workflow pattern
-- Defaults to `gemini-3-pro-image-preview`
-- Accepts repeated input images for edits and composites
-- Writes a sidecar metadata JSON file for traceability
-
-### `cometapi-infographics`
-
-Specialized infographic generation through CometAPI with structured prompt building.
-
-- Converts the popular infographic skill pattern into a CometAPI-native workflow
-- Supports infographic type, style, palette, and document-type presets
-- Can ground the output with `--fact` or `--facts-file`
-- Writes the fully rendered prompt and inputs to a sidecar metadata JSON file
-
-## Authoring Rules
-
-- Keep host-specific instructions out of the skill body unless absolutely necessary.
-- Put helper scripts under `scripts/` with relative paths only.
-- Read credentials from `COMETAPI_KEY`.
-- Prefer one generic CometAPI workflow over provider-specific prompts unless the provider behavior is materially different.
-- Keep `SKILL.md` small and load heavy resources on demand.
-
-## Template
-
-Start from [`_template/SKILL.md`](_template/SKILL.md) when adding the next CometAPI skill.
+1. **Description** — Put all "when to use" info in the YAML `description`. Make it pushy — include user phrases, adjacent domains, and scenarios that should trigger the skill.
+2. **Body** — Explain how things work and why. Keep under 500 lines. Use imperative form.
+3. **Examples** — Include 2–3 realistic usage examples with expected output behavior.
+4. **Scripts** — Bundle deterministic work in `scripts/`. Standard library only where practical.
+5. **Constraints** — Explain limitations honestly with pointers to better-fit skills.

@@ -45,19 +45,11 @@ Reusable `SKILL.md` packages that teach GitHub Copilot, Claude Code, Cursor, Gem
 Current skills:
 
 - `cometapi-image-gen` - Generate images through CometAPI with Gemini, GPT Image, DALL-E, and Flux models.
-- `cometapi-nano-banana` - Gemini image generation, editing, and multi-image composition through CometAPI.
+- `cometapi-nano-banana` - Gemini image generation, editing, and multi-image composition through CometAPI (Pro for quality, Flash for speed).
 - `cometapi-infographics` - Structured infographic generation through CometAPI with traceable prompt metadata.
+- `cometapi-agent-designer` - Generate multi-agent architecture briefs and Mermaid diagrams through CometAPI.
 
 See [`skills/README.md`](skills/README.md) for the catalog, install paths, and usage.
-
-## Skill Intake Pipeline
-
-The repository now includes a strict intake workflow for discovering, cloning, validating, and scoring external skills before they are allowed into the committed CometAPI catalog.
-
-- Runtime artifacts live under `.tmp/` and are gitignored.
-- The written process is in [`skill-intake/SOP.md`](skill-intake/SOP.md).
-- The automation entrypoint is [`skill-intake/scripts/pipeline.py`](skill-intake/scripts/pipeline.py).
-- Only candidates that pass the promotion gate are allowed into [`skill-intake/registry/verified_candidates.json`](skill-intake/registry/verified_candidates.json).
 
 ---
 

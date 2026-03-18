@@ -16,11 +16,19 @@ from urllib import error, parse, request
 
 
 BASE_URL = "https://api.cometapi.com"
-MODEL = "gemini-3-pro-image-preview"
+DEFAULT_MODEL = "gemini-3-pro-image-preview"
+SUPPORTED_MODELS = {
+    "gemini-3-pro-image-preview",
+    "gemini-3.1-flash-image-preview",
+}
 MAX_INPUT_IMAGES = 5
-DEFAULT_TEMPLATE_PATH = (
-    Path(__file__).resolve().parents[1] / "assets" / "SYSTEM_TEMPLATE"
-)
+DEFAULT_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "assets" / "SYSTEM_TEMPLATE"
+
+# Model-aware defaults: flash is tuned for speed, pro for quality.
+MODEL_DEFAULTS = {
+    "gemini-3-pro-image-preview": {"resolution": "2K", "parallel": 1, "delay": 2.0},
+    "gemini-3.1-flash-image-preview": {"resolution": "1K", "parallel": 2, "delay": 1.5},
+}
 
 
 def main() -> int:
@@ -31,10 +39,7 @@ def main() -> int:
         return 1
 
     mode = resolve_mode(args.mode, args.input_image)
-    input_records = [
-        load_reference_record(reference, args.request_timeout)
-        for reference in args.input_image
-    ]
+    input_records = [load_reference_record(reference, args.request_timeout) for reference in args.input_image]
     rendered_prompt = build_rendered_prompt(args, mode)
     system_instruction = load_system_instruction(args)
     base_output = resolve_base_output(args)
@@ -42,7 +47,6 @@ def main() -> int:
     results = run_generation_batch(
         args=args,
         api_key=api_key,
-        mode=mode,
         rendered_prompt=rendered_prompt,
         system_instruction=system_instruction,
         input_records=input_records,
@@ -79,86 +83,38 @@ def main() -> int:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Generate, edit, or compose images through CometAPI using Gemini 3 Pro Image."
-    )
-    parser.add_argument(
-        "--prompt", required=True, help="Primary instruction for the generated image."
-    )
+    parser = argparse.ArgumentParser(description="Generate, edit, or compose images through CometAPI using Gemini.")
+    parser.add_argument("--prompt", required=True, help="Primary instruction for the generated image.")
+    parser.add_argument("--model", default=DEFAULT_MODEL, choices=sorted(SUPPORTED_MODELS), help="Gemini model. Pro for quality, Flash for speed.")
     parser.add_argument("--output", help="Single output file path or base output name.")
     parser.add_argument("--output-dir", help="Directory for batch outputs.")
     parser.add_argument("--prefix", help="Filename prefix for batch generation.")
-    parser.add_argument(
-        "--input-image",
-        action="append",
-        default=[],
-        help=f"Local image path or URL to use as a reference. Repeatable, maximum {MAX_INPUT_IMAGES}.",
-    )
-    parser.add_argument(
-        "--mode",
-        choices=["auto", "generate", "edit", "compose"],
-        default="auto",
-        help="Workflow mode.",
-    )
-    parser.add_argument(
-        "--resolution",
-        choices=["1K", "2K", "4K"],
-        default="1K",
-        help="Output resolution.",
-    )
-    parser.add_argument(
-        "--aspect-ratio", default="1:1", help="Aspect ratio such as 1:1 or 16:9."
-    )
-    parser.add_argument(
-        "--style-note",
-        action="append",
-        default=[],
-        help="Optional art direction note. Repeatable.",
-    )
-    parser.add_argument(
-        "--layout-note",
-        action="append",
-        default=[],
-        help="Optional layout/composition note. Repeatable.",
-    )
-    parser.add_argument(
-        "--preserve-note",
-        action="append",
-        default=[],
-        help="Important visual details to preserve from the source images.",
-    )
-    parser.add_argument(
-        "--count", type=int, default=1, help="How many variants to generate."
-    )
-    parser.add_argument(
-        "--parallel",
-        type=int,
-        default=1,
-        help="Maximum concurrent requests for batch generation.",
-    )
-    parser.add_argument(
-        "--delay",
-        type=float,
-        default=2.0,
-        help="Delay in seconds between sequential or staggered batch requests.",
-    )
-    parser.add_argument(
-        "--system-template",
-        help="Optional path to a system template file. Defaults to assets/SYSTEM_TEMPLATE if it exists.",
-    )
-    parser.add_argument(
-        "--no-system-template",
-        action="store_true",
-        help="Disable loading any system template.",
-    )
-    parser.add_argument(
-        "--request-timeout", type=int, default=120, help="HTTP timeout in seconds."
-    )
+    parser.add_argument("--input-image", action="append", default=[], help=f"Local image path or URL to use as a reference. Repeatable, maximum {MAX_INPUT_IMAGES}.")
+    parser.add_argument("--mode", choices=["auto", "generate", "edit", "compose"], default="auto", help="Workflow mode.")
+    parser.add_argument("--resolution", choices=["1K", "2K", "4K"], default=None, help="Output resolution. Default: 2K for Pro, 1K for Flash.")
+    parser.add_argument("--aspect-ratio", default="1:1", help="Aspect ratio such as 1:1 or 16:9.")
+    parser.add_argument("--style-note", action="append", default=[], help="Optional art direction note. Repeatable.")
+    parser.add_argument("--layout-note", action="append", default=[], help="Optional layout/composition note. Repeatable.")
+    parser.add_argument("--preserve-note", action="append", default=[], help="Important visual details to preserve from the source images.")
+    parser.add_argument("--count", type=int, default=1, help="How many variants to generate.")
+    parser.add_argument("--parallel", type=int, default=None, help="Maximum concurrent requests. Default: 1 for Pro, 2 for Flash.")
+    parser.add_argument("--delay", type=float, default=None, help="Delay in seconds between batch requests. Default: 2.0 for Pro, 1.5 for Flash.")
+    parser.add_argument("--system-template", help="Optional path to a system template file. Defaults to assets/SYSTEM_TEMPLATE if it exists.")
+    parser.add_argument("--no-system-template", action="store_true", help="Disable loading any system template.")
+    parser.add_argument("--request-timeout", type=int, default=300, help="HTTP timeout in seconds.")
     args = parser.parse_args()
+
+    # Apply model-aware defaults for any unset args.
+    defaults = MODEL_DEFAULTS.get(args.model, MODEL_DEFAULTS[DEFAULT_MODEL])
+    if args.resolution is None:
+        args.resolution = defaults["resolution"]
+    if args.parallel is None:
+        args.parallel = defaults["parallel"]
+    if args.delay is None:
+        args.delay = defaults["delay"]
+
     if len(args.input_image) > MAX_INPUT_IMAGES:
-        parser.error(
-            f"Too many input images: {len(args.input_image)} > {MAX_INPUT_IMAGES}"
-        )
+        parser.error(f"Too many input images: {len(args.input_image)} > {MAX_INPUT_IMAGES}")
     if args.count < 1:
         parser.error("--count must be at least 1")
     if args.parallel < 1:
@@ -181,19 +137,23 @@ def resolve_mode(mode: str, input_images: list[str]) -> str:
 
 
 def build_rendered_prompt(args: argparse.Namespace, mode: str) -> str:
+    is_flash = "flash" in args.model
     lines = []
     if mode == "generate":
-        lines.append(
-            "Create a new image that fulfills the user's request with clean composition and strong visual clarity."
-        )
+        if is_flash:
+            lines.append("Create a clear, useful, quickly reviewable image concept that fulfills the user's request.")
+        else:
+            lines.append("Create a polished high-quality final image with strong composition, clear subject hierarchy, and refined detail.")
     elif mode == "edit":
-        lines.append(
-            "Edit the provided source image while keeping the important subject identity and structure recognizable unless the instruction explicitly says otherwise."
-        )
+        if is_flash:
+            lines.append("Edit the provided source image while keeping the important subject identity and clearly recognizable details intact unless the instruction explicitly asks for change.")
+        else:
+            lines.append("Edit the provided source image while preserving the subject identity, silhouette, and key recognizable details unless the instruction explicitly asks for transformation.")
     else:
-        lines.append(
-            "Combine the provided source images into one coherent composition while preserving the recognizable details that matter from each source unless the user explicitly asks for transformation."
-        )
+        if is_flash:
+            lines.append("Combine the provided source images into one coherent fast-iteration concept while preserving the key recognizable details that matter from each source.")
+        else:
+            lines.append("Combine the provided source images into one coherent premium composition while preserving the recognizable details that matter from each source.")
 
     lines.append(f"User request: {args.prompt}")
     if args.style_note:
@@ -206,21 +166,21 @@ def build_rendered_prompt(args: argparse.Namespace, mode: str) -> str:
         lines.append("Preserve these source details:")
         lines.extend(f"- {note}" for note in args.preserve_note)
     if mode == "compose":
-        lines.append(
-            "Use all provided images meaningfully and keep scale, lighting, and perspective internally consistent."
-        )
-    lines.append("Return a high-quality final image only.")
+        if is_flash:
+            lines.append("Use all provided images meaningfully. Keep the final concept easy to evaluate at a glance.")
+        else:
+            lines.append("Use all provided images meaningfully. Keep scale, perspective, lighting, and style consistent across the final scene.")
+    if is_flash:
+        lines.append("Return a strong final image only.")
+    else:
+        lines.append("Return a high-quality final image only.")
     return "\n".join(lines)
 
 
 def load_system_instruction(args: argparse.Namespace) -> str | None:
     if args.no_system_template:
         return None
-    candidate = (
-        Path(args.system_template).expanduser()
-        if args.system_template
-        else DEFAULT_TEMPLATE_PATH
-    )
+    candidate = Path(args.system_template).expanduser() if args.system_template else DEFAULT_TEMPLATE_PATH
     if not candidate.exists():
         return None
     text = candidate.read_text(encoding="utf-8").strip()
@@ -233,13 +193,9 @@ def load_reference_record(reference: str, timeout: int) -> dict[str, Any]:
         try:
             with request.urlopen(req, timeout=timeout) as response:
                 raw = response.read()
-                mime_type = response.headers.get("Content-Type", "image/png").split(
-                    ";", 1
-                )[0]
+                mime_type = response.headers.get("Content-Type", "image/png").split(";", 1)[0]
         except error.URLError as exc:
-            raise SystemExit(
-                f"Failed to fetch input image URL {reference}: {exc.reason}"
-            ) from exc
+            raise SystemExit(f"Failed to fetch input image URL {reference}: {exc.reason}") from exc
         source = {"type": "url", "value": reference}
     else:
         path = Path(reference).expanduser().resolve()
@@ -254,12 +210,7 @@ def load_reference_record(reference: str, timeout: int) -> dict[str, Any]:
         "mime_type": mime_type,
         "size_bytes": len(raw),
         "sha256": sha256_bytes(raw),
-        "part": {
-            "inlineData": {
-                "mimeType": mime_type,
-                "data": base64.b64encode(raw).decode("ascii"),
-            }
-        },
+        "part": {"inlineData": {"mimeType": mime_type, "data": base64.b64encode(raw).decode("ascii")}},
     }
 
 
@@ -275,55 +226,20 @@ def resolve_base_output(args: argparse.Namespace) -> Path:
     return output_dir / prefix
 
 
-def run_generation_batch(
-    args: argparse.Namespace,
-    api_key: str,
-    mode: str,
-    rendered_prompt: str,
-    system_instruction: str | None,
-    input_records: list[dict[str, Any]],
-    base_output: Path,
-) -> list[dict[str, Any]]:
-    common_payload = build_payload(
-        rendered_prompt,
-        system_instruction,
-        input_records,
-        args.aspect_ratio,
-        args.resolution,
-    )
+def run_generation_batch(args: argparse.Namespace, api_key: str, rendered_prompt: str, system_instruction: str | None, input_records: list[dict[str, Any]], base_output: Path) -> list[dict[str, Any]]:
+    common_payload = build_payload(rendered_prompt, system_instruction, input_records, args.aspect_ratio, args.resolution)
     variants = list(range(1, args.count + 1))
     results: list[dict[str, Any]] = []
-
     if args.count == 1 or args.parallel == 1:
         for variant_index in variants:
             if variant_index > 1 and args.delay > 0:
                 time.sleep(args.delay)
-            results.append(
-                generate_variant(
-                    api_key,
-                    common_payload,
-                    args.request_timeout,
-                    base_output,
-                    variant_index,
-                    args.count,
-                )
-            )
+            results.append(generate_variant(api_key, args.model, common_payload, args.request_timeout, base_output, variant_index, args.count))
         return results
-
     with ThreadPoolExecutor(max_workers=args.parallel) as executor:
         futures = []
         for variant_index in variants:
-            futures.append(
-                executor.submit(
-                    generate_variant,
-                    api_key,
-                    common_payload,
-                    args.request_timeout,
-                    base_output,
-                    variant_index,
-                    args.count,
-                )
-            )
+            futures.append(executor.submit(generate_variant, api_key, args.model, common_payload, args.request_timeout, base_output, variant_index, args.count))
             if args.delay > 0 and variant_index < args.count:
                 time.sleep(args.delay)
         for future in as_completed(futures):
@@ -331,78 +247,25 @@ def run_generation_batch(
     return sorted(results, key=lambda item: item["variant_index"])
 
 
-def build_payload(
-    rendered_prompt: str,
-    system_instruction: str | None,
-    input_records: list[dict[str, Any]],
-    aspect_ratio: str,
-    resolution: str,
-) -> dict[str, Any]:
+def build_payload(rendered_prompt: str, system_instruction: str | None, input_records: list[dict[str, Any]], aspect_ratio: str, resolution: str) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "contents": [
-            {
-                "role": "user",
-                "parts": [{"text": rendered_prompt}]
-                + [record["part"] for record in input_records],
-            }
-        ],
-        "generationConfig": {
-            "responseModalities": ["IMAGE"],
-            "imageConfig": {
-                "aspectRatio": aspect_ratio,
-                "imageSize": resolution,
-            },
-        },
+        "contents": [{"role": "user", "parts": [{"text": rendered_prompt}] + [record["part"] for record in input_records]}],
+        "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": aspect_ratio, "imageSize": resolution}},
     }
     if system_instruction:
         payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
     return payload
 
 
-def generate_variant(
-    api_key: str,
-    payload: dict[str, Any],
-    timeout: int,
-    base_output: Path,
-    variant_index: int,
-    total_variants: int,
-) -> dict[str, Any]:
-    status_code, response = request_json(
-        method="POST",
-        url=f"{BASE_URL}/v1beta/models/{MODEL}:generateContent",
-        headers={
-            "x-goog-api-key": api_key,
-            "Content-Type": "application/json",
-        },
-        body=payload,
-        timeout=timeout,
-    )
+def generate_variant(api_key: str, model: str, payload: dict[str, Any], timeout: int, base_output: Path, variant_index: int, total_variants: int) -> dict[str, Any]:
+    status_code, response = request_json(method="POST", url=f"{BASE_URL}/v1beta/models/{model}:generateContent", headers={"x-goog-api-key": api_key, "Content-Type": "application/json"}, body=payload, timeout=timeout)
     if not 200 <= status_code < 300:
-        return {
-            "variant_index": variant_index,
-            "success": False,
-            "error": json.dumps(response, ensure_ascii=True),
-            "outputs": [],
-        }
-
+        return {"variant_index": variant_index, "success": False, "error": json.dumps(response, ensure_ascii=True), "outputs": []}
     image_parts = extract_image_parts(response)
     if not image_parts:
-        return {
-            "variant_index": variant_index,
-            "success": False,
-            "error": "No image payload returned.",
-            "outputs": [],
-        }
-
-    outputs = save_variant_images(
-        base_output, image_parts, variant_index, total_variants
-    )
-    return {
-        "variant_index": variant_index,
-        "success": True,
-        "error": None,
-        "outputs": outputs,
-    }
+        return {"variant_index": variant_index, "success": False, "error": "No image payload returned.", "outputs": []}
+    outputs = save_variant_images(base_output, image_parts, variant_index, total_variants)
+    return {"variant_index": variant_index, "success": True, "error": None, "outputs": outputs}
 
 
 def extract_image_parts(response: dict[str, Any]) -> list[dict[str, str]]:
@@ -415,69 +278,35 @@ def extract_image_parts(response: dict[str, Any]) -> list[dict[str, str]]:
     for part in parts:
         inline = part.get("inlineData") if isinstance(part, dict) else None
         if inline and inline.get("data"):
-            images.append(
-                {
-                    "mime_type": inline.get("mimeType") or "image/png",
-                    "data": inline["data"],
-                }
-            )
+            images.append({"mime_type": inline.get("mimeType") or "image/png", "data": inline["data"]})
     return images
 
 
-def save_variant_images(
-    base_output: Path,
-    images: list[dict[str, str]],
-    variant_index: int,
-    total_variants: int,
-) -> list[dict[str, Any]]:
+def save_variant_images(base_output: Path, images: list[dict[str, str]], variant_index: int, total_variants: int) -> list[dict[str, Any]]:
     base_output.parent.mkdir(parents=True, exist_ok=True)
     outputs: list[dict[str, Any]] = []
     for image_index, image in enumerate(images, start=1):
-        suffix = normalize_suffix(
-            base_output.suffix
-            or (mimetypes.guess_extension(image["mime_type"]) or ".png")
-        )
+        suffix = normalize_suffix(base_output.suffix or (mimetypes.guess_extension(image["mime_type"]) or ".png"))
         if total_variants == 1 and len(images) == 1:
             path = base_output.with_suffix(suffix)
         elif total_variants > 1 and len(images) == 1:
-            path = base_output.with_name(
-                f"{base_output.stem}-{variant_index:02d}{suffix}"
-            )
+            path = base_output.with_name(f"{base_output.stem}-{variant_index:02d}{suffix}")
         elif total_variants == 1:
-            path = base_output.with_name(
-                f"{base_output.stem}-{image_index:02d}{suffix}"
-            )
+            path = base_output.with_name(f"{base_output.stem}-{image_index:02d}{suffix}")
         else:
-            path = base_output.with_name(
-                f"{base_output.stem}-{variant_index:02d}-{image_index:02d}{suffix}"
-            )
+            path = base_output.with_name(f"{base_output.stem}-{variant_index:02d}-{image_index:02d}{suffix}")
         raw = base64.b64decode(image["data"])
         path.write_bytes(raw)
-        outputs.append(
-            {
-                "path": str(path.resolve()),
-                "mime_type": image["mime_type"],
-                "sha256": sha256_bytes(raw),
-                "size_bytes": len(raw),
-            }
-        )
+        outputs.append({"path": str(path.resolve()), "mime_type": image["mime_type"], "sha256": sha256_bytes(raw), "size_bytes": len(raw)})
     return outputs
 
 
-def write_metadata(
-    args: argparse.Namespace,
-    mode: str,
-    rendered_prompt: str,
-    system_instruction: str | None,
-    input_records: list[dict[str, Any]],
-    base_output: Path,
-    results: list[dict[str, Any]],
-) -> str:
+def write_metadata(args: argparse.Namespace, mode: str, rendered_prompt: str, system_instruction: str | None, input_records: list[dict[str, Any]], base_output: Path, results: list[dict[str, Any]]) -> str:
     metadata_path = base_output.with_name(f"{base_output.stem}.meta.json")
     metadata = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "provider": "cometapi",
-        "model": MODEL,
+        "model": args.model,
         "mode": mode,
         "prompt": args.prompt,
         "rendered_prompt": rendered_prompt,
@@ -490,37 +319,15 @@ def write_metadata(
         "resolution": args.resolution,
         "aspect_ratio": args.aspect_ratio,
         "system_instruction": system_instruction,
-        "system_template_path": (
-            None
-            if args.no_system_template
-            else str(
-                (
-                    Path(args.system_template).expanduser()
-                    if args.system_template
-                    else DEFAULT_TEMPLATE_PATH
-                )
-            )
-        ),
-        "input_images": [
-            {
-                "source": record["source"],
-                "mime_type": record["mime_type"],
-                "sha256": record["sha256"],
-                "size_bytes": record["size_bytes"],
-            }
-            for record in input_records
-        ],
+        "system_template_path": None if args.no_system_template else str((Path(args.system_template).expanduser() if args.system_template else DEFAULT_TEMPLATE_PATH)),
+        "input_images": [{"source": record["source"], "mime_type": record["mime_type"], "sha256": record["sha256"], "size_bytes": record["size_bytes"]} for record in input_records],
         "results": results,
     }
-    metadata_path.write_text(
-        json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
+    metadata_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return str(metadata_path.resolve())
 
 
-def request_json(
-    method: str, url: str, headers: dict[str, str], body: dict[str, Any], timeout: int
-) -> tuple[int, dict[str, Any]]:
+def request_json(method: str, url: str, headers: dict[str, str], body: dict[str, Any], timeout: int) -> tuple[int, dict[str, Any]]:
     req = request.Request(url, data=json.dumps(body).encode("utf-8"), method=method)
     for key, value in headers.items():
         req.add_header(key, value)
@@ -536,6 +343,8 @@ def request_json(
         return exc.code, parsed
     except error.URLError as exc:
         return 0, {"error": str(exc.reason)}
+    except TimeoutError:
+        return 0, {"error": f"Request timed out after {timeout} seconds"}
 
 
 def is_url(value: str) -> bool:

@@ -3,6 +3,11 @@
 .AppleDouble
 .LSOverride
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
 # Node
 node_modules/
 npm-debug.log*
@@ -14,6 +19,13 @@ yarn-error.log*
 *.log
 logs/
 .tmp/
+
+# Internal (dev tooling, not for public repo)
+.internal/
+openclaw/tools/
+
+# Skill evals (dev-only test cases)
+**/evals/
 
 # Env / secrets
 .env
