@@ -2,6 +2,38 @@
 
 One-command setup scripts and reusable skills for popular AI frameworks and AI assistants.
 
+## Codex
+
+Add CometAPI as a provider to your local Codex app or CLI configuration.
+
+### macOS / Linux / WSL
+
+```bash
+# Install / update CometAPI provider
+curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.sh | sh -s -- --key <COMETAPI_KEY>
+
+# Choose a model explicitly
+curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.sh | sh -s -- --key <COMETAPI_KEY> --model your-model-id
+```
+
+### Windows (PowerShell)
+
+```powershell
+# Install / update CometAPI provider
+powershell -c "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.ps1'))) -Key '<COMETAPI_KEY>'"
+
+# Choose a model explicitly
+powershell -c "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.ps1'))) -Key '<COMETAPI_KEY>' -Model 'your-model-id'"
+```
+
+The default Codex setup stores the CometAPI key in `~/.codex/cometapi_api_key`
+and does not replace an existing ChatGPT login in `~/.codex/auth.json`.
+On Windows native PowerShell, `~/.codex` is `%USERPROFILE%\.codex`
+(`$HOME\.codex` in PowerShell), typically `C:\Users\<user>\.codex`.
+In WSL, it is the Linux distribution's `~/.codex`.
+Use `--force-auth-json` or `-ForceAuthJson` only when you want Codex's
+legacy API-key login file to be managed by the setup script.
+
 ## OpenClaw
 
 Add CometAPI as a provider to your [OpenClaw](https://openclaw.ai) installation.
