@@ -9,7 +9,10 @@ Add CometAPI as a provider to your local Codex app or CLI configuration.
 ### macOS / Linux / WSL
 
 ```bash
-# Install / update CometAPI provider
+# Interactive install / update
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.sh)"
+
+# Non-interactive install / update
 curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.sh | sh -s -- --key <COMETAPI_KEY>
 
 # Choose a model explicitly
@@ -19,7 +22,10 @@ curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/code
 ### Windows (PowerShell)
 
 ```powershell
-# Install / update CometAPI provider
+# Interactive install / update
+powershell -c "irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.ps1' | iex"
+
+# Non-interactive install / update
 powershell -c "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.ps1'))) -Key '<COMETAPI_KEY>'"
 
 # Choose a model explicitly
@@ -31,8 +37,10 @@ and does not replace an existing ChatGPT login in `~/.codex/auth.json`.
 On Windows native PowerShell, `~/.codex` is `%USERPROFILE%\.codex`
 (`$HOME\.codex` in PowerShell), typically `C:\Users\<user>\.codex`.
 In WSL, it is the Linux distribution's `~/.codex`.
-Use `--force-auth-json` or `-ForceAuthJson` only when you want Codex's
-legacy API-key login file to be managed by the setup script.
+If interactive setup detects an existing ChatGPT `auth.json`, it asks before
+replacing it with CometAPI API-key auth. Use `--force-auth-json` or
+`-ForceAuthJson` only when you want Codex's legacy API-key login file to be
+managed by the setup script.
 
 ## OpenClaw
 

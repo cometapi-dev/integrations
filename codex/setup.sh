@@ -11,6 +11,7 @@ KEY_URL="https://www.cometapi.com/console/token"
 
 ARG_KEY=""
 MODEL="$DEFAULT_MODEL"
+MODEL_SET=0
 CODEX_HOME_DIR="${CODEX_HOME:-${HOME}/.codex}"
 DRY_RUN=0
 SKIP_VERIFY=0
@@ -38,7 +39,7 @@ Usage: curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/ma
 Configure Codex to use CometAPI without replacing an existing ChatGPT login.
 
 Options:
-  --key KEY             CometAPI API key. Defaults to COMETAPI_KEY env var.
+  --key KEY             CometAPI API key. Defaults to COMETAPI_KEY env var or saved key file.
   --model MODEL         Codex model ID to set. Default: gpt-5.5
   --codex-home PATH     Codex state directory. Default: CODEX_HOME or ~/.codex
   --dry-run             Show changes without writing files
@@ -48,6 +49,7 @@ Options:
   --version             Show script version
 
 Examples:
+  sh -c "$(curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.sh)"
   curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.sh | sh -s -- --key sk-xxxxx
   curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.sh | sh -s -- --key sk-xxxxx --model your-model-id
 EOF
@@ -62,9 +64,9 @@ while [ $# -gt 0 ]; do
       ARG_KEY="${1#*=}"; shift ;;
     --model)
       [ $# -ge 2 ] || { err "--model requires a value"; exit 1; }
-      MODEL="$2"; shift 2 ;;
+      MODEL="$2"; MODEL_SET=1; shift 2 ;;
     --model=*)
-      MODEL="${1#*=}"; shift ;;
+      MODEL="${1#*=}"; MODEL_SET=1; shift ;;
     --codex-home)
       [ $# -ge 2 ] || { err "--codex-home requires a value"; exit 1; }
       CODEX_HOME_DIR="$2"; shift 2 ;;
@@ -108,25 +110,116 @@ json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
+read_saved_key() {
+  [ -f "$KEY_FILE" ] || return 1
+  _saved_key="$(sed -n '1p' "$KEY_FILE" | tr -d '\r\n')"
+  [ -n "$_saved_key" ] || return 1
+  printf '%s' "$_saved_key"
+}
+
 resolve_key() {
-  COMETAPI_KEY_VALUE="${ARG_KEY:-${COMETAPI_KEY:-}}"
+  _env_key="${COMETAPI_KEY:-}"
+  _saved_key=""
+  if [ -z "$ARG_KEY" ] && [ -z "$_env_key" ]; then
+    _saved_key="$(read_saved_key || true)"
+  fi
+
+  COMETAPI_KEY_VALUE="${ARG_KEY:-${_env_key:-${_saved_key:-}}}"
+  _key_source="prompt"
+  if [ -n "$ARG_KEY" ]; then
+    _key_source="flag"
+  elif [ -n "$_env_key" ]; then
+    _key_source="env"
+  elif [ -n "$_saved_key" ]; then
+    _key_source="key_file"
+  fi
+
+  if [ "$_key_source" = "key_file" ]; then
+    info "Using saved CometAPI key from $KEY_FILE"
+  fi
+
   if [ -z "$COMETAPI_KEY_VALUE" ]; then
-    if [ -t 0 ]; then
-      printf "CometAPI API key (sk-...): "
-      read -r COMETAPI_KEY_VALUE
-    else
-      err "No API key provided. Pass --key sk-xxxxx or set COMETAPI_KEY."
-      printf 'Get a key at: %s\n' "$KEY_URL" >&2
+    if [ ! -t 0 ]; then
+      err "No API key provided and stdin is not a terminal."
+      printf '\nThis happens with piped installs such as curl ... | sh.\n' >&2
+      printf 'Use one of these forms:\n' >&2
+      printf '  sh -c "$(curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.sh)"\n' >&2
+      printf '  curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.sh | sh -s -- --key sk-xxxxx\n' >&2
+      printf '  COMETAPI_KEY=sk-xxxxx sh -c "$(curl -fsSL https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.sh)"\n' >&2
+      printf '\nGet a key at: %s\n' "$KEY_URL" >&2
       exit 1
     fi
   fi
 
-  case "$COMETAPI_KEY_VALUE" in
-    sk-???????*) ;;
-    *)
-      err "Invalid key format. A CometAPI key starts with sk- and is at least 10 characters."
-      exit 1 ;;
-  esac
+  _attempts=0
+  _max_attempts=3
+  while :; do
+    if [ -z "$COMETAPI_KEY_VALUE" ]; then
+      printf "CometAPI API key (sk-...): "
+      read -r COMETAPI_KEY_VALUE
+    fi
+    _attempts=$((_attempts + 1))
+
+    case "$COMETAPI_KEY_VALUE" in
+      sk-???????*) break ;;
+      *)
+        if [ -t 0 ] && [ "$_key_source" = "prompt" ]; then
+          if [ "$_attempts" -ge "$_max_attempts" ]; then
+            err "Invalid key format ($_attempts/$_max_attempts). Exiting."
+            printf 'Get a key at: %s\n' "$KEY_URL" >&2
+            exit 1
+          fi
+          warn "Invalid key format ($_attempts/$_max_attempts). A CometAPI key starts with sk- and is at least 10 characters."
+          printf 'Get a key at: %s\n\n' "$KEY_URL"
+          COMETAPI_KEY_VALUE=""
+        else
+          err "Invalid key format. A CometAPI key starts with sk- and is at least 10 characters."
+          printf 'Get a key at: %s\n' "$KEY_URL" >&2
+          exit 1
+        fi ;;
+    esac
+  done
+}
+
+resolve_model() {
+  if [ "$MODEL_SET" = "0" ] && [ -t 0 ]; then
+    printf "Codex model [%s]: " "$DEFAULT_MODEL"
+    read -r _model_input
+    if [ -n "$_model_input" ]; then
+      MODEL="$_model_input"
+    fi
+  fi
+}
+
+auth_json_is_chatgpt() {
+  [ -f "$AUTH_FILE" ] || return 1
+  grep -Eq '"auth_mode"[[:space:]]*:[[:space:]]*"chatgpt"' "$AUTH_FILE"
+}
+
+resolve_auth_mode() {
+  if [ "$FORCE_AUTH_JSON" = "1" ]; then
+    warn "Legacy auth mode enabled: auth.json will be managed after backup"
+    return 0
+  fi
+
+  if auth_json_is_chatgpt; then
+    if [ -t 0 ]; then
+      warn "Existing ChatGPT auth detected in $AUTH_FILE"
+      printf "Replace auth.json with CometAPI API-key auth? [y/N]: "
+      read -r _auth_choice
+      case "$_auth_choice" in
+        y|Y|yes|YES)
+          FORCE_AUTH_JSON=1
+          warn "auth.json will be backed up and replaced with CometAPI API-key auth" ;;
+        *)
+          info "Keeping existing ChatGPT auth.json; using provider auth command" ;;
+      esac
+    else
+      info "Existing ChatGPT auth.json detected; keeping it because --force-auth-json was not set"
+    fi
+  else
+    info "Default auth mode: existing auth.json will not be touched"
+  fi
 }
 
 backup_before_write() {
@@ -340,13 +433,10 @@ verify_codex_runtime() {
 
 step "Pre-flight checks"
 resolve_key
+resolve_model
+resolve_auth_mode
 info "Codex home: $CODEX_HOME_DIR"
 info "Model: $MODEL"
-if [ "$FORCE_AUTH_JSON" = "1" ]; then
-  warn "Legacy auth mode enabled: auth.json will be managed after backup"
-else
-  info "Default auth mode: existing auth.json will not be touched"
-fi
 
 step "Verify CometAPI key"
 verify_key_online

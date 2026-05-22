@@ -9,7 +9,12 @@
     the legacy auth.json API-key mode.
 
 .EXAMPLE
+    powershell -c "irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.ps1' | iex"
+    # Interactive prompt for API key and model.
+
+.EXAMPLE
     powershell -c "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.ps1'))) -Key '<COMETAPI_KEY>'"
+    # Non-interactive setup.
 #>
 
 [CmdletBinding()]
@@ -17,7 +22,7 @@ param(
     [Parameter(Position = 0)]
     [string]$Key,
 
-    [string]$Model = "gpt-5.5",
+    [string]$Model,
 
     [string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }),
 
@@ -32,6 +37,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $ScriptVersion = "1.0.0"
+$DefaultModel = "gpt-5.5"
+$ModelWasProvided = $PSBoundParameters.ContainsKey("Model")
+if (-not $Model) { $Model = $DefaultModel }
 $BaseUrl = "https://api.cometapi.com/v1"
 $KeyUrl = "https://www.cometapi.com/console/token"
 $ConfigFile = Join-Path $CodexHome "config.toml"
@@ -49,22 +57,107 @@ function Escape-TomlString {
     return $Value.Replace('\', '\\').Replace('"', '\"')
 }
 
+function Get-SavedCometApiKey {
+    if (-not (Test-Path $KeyFile -PathType Leaf)) { return $null }
+    $saved = ([System.IO.File]::ReadAllText($KeyFile)).Trim()
+    if ($saved) { return $saved }
+    return $null
+}
+
 function Resolve-ApiKey {
-    $apiKey = if ($Key) { $Key } elseif ($env:COMETAPI_KEY) { $env:COMETAPI_KEY } else { "" }
-    if (-not $apiKey) {
-        try {
-            $apiKey = Read-Host "CometAPI API key (sk-...)"
-        } catch {
-            Write-Err "No API key provided. Pass -Key sk-xxxxx or set COMETAPI_KEY."
+    $envKey = $env:COMETAPI_KEY
+    $savedKey = if ($Key -or $envKey) { $null } else { Get-SavedCometApiKey }
+    $apiKey = if ($Key) { $Key } elseif ($envKey) { $envKey } elseif ($savedKey) { $savedKey } else { "" }
+
+    $script:ApiKeySource = if ($Key) { "param" } elseif ($envKey) { "env" } elseif ($savedKey) { "key_file" } else { "prompt" }
+    if ($script:ApiKeySource -eq "key_file") {
+        Write-Info "Using saved CometAPI key from $KeyFile"
+    }
+
+    $isInteractive = -not $apiKey
+    $attempts = 0
+    $maxAttempts = 3
+
+    while ($true) {
+        if ($isInteractive) {
+            try {
+                $apiKey = Read-Host "CometAPI API key (sk-...)"
+            } catch {
+                Write-Err "No API key provided and PowerShell is non-interactive."
+                Write-Host ""
+                Write-Host "Use one of these forms:"
+                Write-Host "  powershell -c `"irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.ps1' | iex`""
+                Write-Host "  powershell -c `"& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.ps1'))) -Key 'sk-xxxxx'`""
+                Write-Host "Get a key at: $KeyUrl"
+                exit 1
+            }
+        }
+        $attempts++
+
+        if ($apiKey -match '^sk-.{7,}$') { break }
+
+        if ($isInteractive) {
+            if ($attempts -ge $maxAttempts) {
+                Write-Err "Invalid key format ($attempts/$maxAttempts). Exiting."
+                Write-Host "Get a key at: $KeyUrl"
+                exit 1
+            }
+            Write-Warn "Invalid key format ($attempts/$maxAttempts). A CometAPI key starts with sk- and is at least 10 characters."
+            Write-Host "Get a key at: $KeyUrl"
+            $apiKey = ""
+        } else {
+            Write-Err "Invalid key format. A CometAPI key starts with sk- and is at least 10 characters."
             Write-Host "Get a key at: $KeyUrl"
             exit 1
         }
     }
-    if ($apiKey -notmatch '^sk-.{7,}$') {
-        Write-Err "Invalid key format. A CometAPI key starts with sk- and is at least 10 characters."
-        exit 1
-    }
     return $apiKey
+}
+
+function Resolve-Model {
+    if (-not $ModelWasProvided -and $script:ApiKeySource -eq "prompt") {
+        try {
+            $inputModel = Read-Host "Codex model [$DefaultModel]"
+            if ($inputModel) { $script:Model = $inputModel }
+        } catch {
+            $script:Model = $DefaultModel
+        }
+    }
+    if (-not $script:Model) { $script:Model = $DefaultModel }
+}
+
+function Test-AuthJsonIsChatGpt {
+    if (-not (Test-Path $AuthFile -PathType Leaf)) { return $false }
+    $content = [System.IO.File]::ReadAllText($AuthFile)
+    return $content -match '"auth_mode"\s*:\s*"chatgpt"'
+}
+
+function Resolve-AuthMode {
+    if ($ForceAuthJson) {
+        Write-Warn "Legacy auth mode enabled: auth.json will be managed after backup"
+        return
+    }
+
+    if (Test-AuthJsonIsChatGpt) {
+        if ($script:ApiKeySource -eq "prompt") {
+            Write-Warn "Existing ChatGPT auth detected in $AuthFile"
+            try {
+                $choice = Read-Host "Replace auth.json with CometAPI API-key auth? [y/N]"
+            } catch {
+                $choice = ""
+            }
+            if ($choice -match '^(y|yes)$') {
+                $script:ForceAuthJson = $true
+                Write-Warn "auth.json will be backed up and replaced with CometAPI API-key auth"
+            } else {
+                Write-Info "Keeping existing ChatGPT auth.json; using provider auth command"
+            }
+        } else {
+            Write-Info "Existing ChatGPT auth.json detected; keeping it because -ForceAuthJson was not set"
+        }
+    } else {
+        Write-Info "Default auth mode: existing auth.json will not be touched"
+    }
 }
 
 function Add-Backup {
@@ -312,13 +405,10 @@ function Test-CodexRuntime {
 
 Write-Step "Pre-flight checks"
 $ApiKey = Resolve-ApiKey
+Resolve-Model
+Resolve-AuthMode
 Write-Info "Codex home: $CodexHome"
 Write-Info "Model: $Model"
-if ($ForceAuthJson) {
-    Write-Warn "Legacy auth mode enabled: auth.json will be managed after backup"
-} else {
-    Write-Info "Default auth mode: existing auth.json will not be touched"
-}
 
 Write-Step "Verify CometAPI key"
 Test-CometApiKey -ApiKey $ApiKey
