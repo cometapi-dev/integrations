@@ -91,7 +91,7 @@ done
 
 CONFIG_FILE="${CODEX_HOME_DIR}/config.toml"
 AUTH_FILE="${CODEX_HOME_DIR}/auth.json"
-KEY_FILE="${CODEX_HOME_DIR}/cometapi_api_key"
+KEY_FILE="${CODEX_HOME_DIR}/cometapi_key"
 ROLLBACK_FILE="${TMPDIR:-/tmp}/cometapi-codex-rollback.$$"
 WRITES_FILE="${TMPDIR:-/tmp}/cometapi-codex-writes.$$"
 : > "$ROLLBACK_FILE"
@@ -110,11 +110,38 @@ json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
+mask_key() {
+  _key="$1"
+  _len=${#_key}
+  if [ "$_len" -le 10 ]; then
+    printf '%s' "$_key"
+    return
+  fi
+  _prefix="$(printf '%s' "$_key" | cut -c1-6)"
+  _suffix="$(printf '%s' "$_key" | cut -c$((_len - 3))-$_len)"
+  printf '%s...%s' "$_prefix" "$_suffix"
+}
+
 read_saved_key() {
   [ -f "$KEY_FILE" ] || return 1
   _saved_key="$(sed -n '1p' "$KEY_FILE" | tr -d '\r\n')"
   [ -n "$_saved_key" ] || return 1
   printf '%s' "$_saved_key"
+}
+
+confirm_candidate_key() {
+  _source_label="$1"
+  _candidate="$2"
+  _masked="$(mask_key "$_candidate")"
+  printf "Use %s CometAPI key %s? [Y/n]: " "$_source_label" "$_masked"
+  read -r _choice
+  case "$_choice" in
+    n|N|no|NO)
+      COMETAPI_KEY_VALUE=""
+      _key_source="prompt" ;;
+    *)
+      COMETAPI_KEY_VALUE="$_candidate" ;;
+  esac
 }
 
 resolve_key() {
@@ -135,7 +162,17 @@ resolve_key() {
   fi
 
   if [ "$_key_source" = "key_file" ]; then
-    info "Using saved CometAPI key from $KEY_FILE"
+    info "Found saved CometAPI key in $KEY_FILE"
+  elif [ "$_key_source" = "env" ]; then
+    info "Found COMETAPI_KEY in environment"
+  fi
+
+  if [ -t 0 ] && [ -z "$ARG_KEY" ]; then
+    if [ -n "$_env_key" ]; then
+      confirm_candidate_key "environment" "$_env_key"
+    elif [ -n "$_saved_key" ]; then
+      confirm_candidate_key "saved" "$_saved_key"
+    fi
   fi
 
   if [ -z "$COMETAPI_KEY_VALUE" ]; then
@@ -163,7 +200,7 @@ resolve_key() {
     case "$COMETAPI_KEY_VALUE" in
       sk-???????*) break ;;
       *)
-        if [ -t 0 ] && [ "$_key_source" = "prompt" ]; then
+        if [ -t 0 ] && [ "$_key_source" != "flag" ]; then
           if [ "$_attempts" -ge "$_max_attempts" ]; then
             err "Invalid key format ($_attempts/$_max_attempts). Exiting."
             printf 'Get a key at: %s\n' "$KEY_URL" >&2

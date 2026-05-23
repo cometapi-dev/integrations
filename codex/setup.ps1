@@ -44,7 +44,7 @@ $BaseUrl = "https://api.cometapi.com/v1"
 $KeyUrl = "https://www.cometapi.com/console/token"
 $ConfigFile = Join-Path $CodexHome "config.toml"
 $AuthFile = Join-Path $CodexHome "auth.json"
-$KeyFile = Join-Path $CodexHome "cometapi_api_key"
+$KeyFile = Join-Path $CodexHome "cometapi_key"
 $Rollback = New-Object System.Collections.Generic.List[object]
 
 function Write-Info { param([string]$Message) Write-Host "  OK    $Message" -ForegroundColor Green }
@@ -57,11 +57,32 @@ function Escape-TomlString {
     return $Value.Replace('\', '\\').Replace('"', '\"')
 }
 
+function Get-MaskedKey {
+    param([string]$Value)
+    if ($Value.Length -le 10) { return $Value }
+    return ($Value.Substring(0, 6) + "..." + $Value.Substring($Value.Length - 4))
+}
+
 function Get-SavedCometApiKey {
     if (-not (Test-Path $KeyFile -PathType Leaf)) { return $null }
     $saved = ([System.IO.File]::ReadAllText($KeyFile)).Trim()
     if ($saved) { return $saved }
     return $null
+}
+
+function Confirm-CandidateCometApiKey {
+    param([string]$SourceLabel, [string]$Candidate)
+    $masked = Get-MaskedKey -Value $Candidate
+    try {
+        $choice = Read-Host "Use $SourceLabel CometAPI key $($masked)? [Y/n]"
+    } catch {
+        return $Candidate
+    }
+    if ($choice -match '^(n|no)$') {
+        $script:ApiKeySource = "prompt"
+        return ""
+    }
+    return $Candidate
 }
 
 function Resolve-ApiKey {
@@ -71,7 +92,17 @@ function Resolve-ApiKey {
 
     $script:ApiKeySource = if ($Key) { "param" } elseif ($envKey) { "env" } elseif ($savedKey) { "key_file" } else { "prompt" }
     if ($script:ApiKeySource -eq "key_file") {
-        Write-Info "Using saved CometAPI key from $KeyFile"
+        Write-Info "Found saved CometAPI key in $KeyFile"
+    } elseif ($script:ApiKeySource -eq "env") {
+        Write-Info "Found COMETAPI_KEY in environment"
+    }
+
+    if (-not $Key) {
+        if ($envKey) {
+            $apiKey = Confirm-CandidateCometApiKey -SourceLabel "environment" -Candidate $envKey
+        } elseif ($savedKey) {
+            $apiKey = Confirm-CandidateCometApiKey -SourceLabel "saved" -Candidate $savedKey
+        }
     }
 
     $isInteractive = -not $apiKey
@@ -79,7 +110,7 @@ function Resolve-ApiKey {
     $maxAttempts = 3
 
     while ($true) {
-        if ($isInteractive) {
+        if (-not $apiKey) {
             try {
                 $apiKey = Read-Host "CometAPI API key (sk-...)"
             } catch {
@@ -96,7 +127,7 @@ function Resolve-ApiKey {
 
         if ($apiKey -match '^sk-.{7,}$') { break }
 
-        if ($isInteractive) {
+        if ($script:ApiKeySource -ne "param") {
             if ($attempts -ge $maxAttempts) {
                 Write-Err "Invalid key format ($attempts/$maxAttempts). Exiting."
                 Write-Host "Get a key at: $KeyUrl"
@@ -115,7 +146,7 @@ function Resolve-ApiKey {
 }
 
 function Resolve-Model {
-    if (-not $ModelWasProvided -and $script:ApiKeySource -eq "prompt") {
+    if (-not $ModelWasProvided -and -not $Key) {
         try {
             $inputModel = Read-Host "Codex model [$DefaultModel]"
             if ($inputModel) { $script:Model = $inputModel }
@@ -139,7 +170,7 @@ function Resolve-AuthMode {
     }
 
     if (Test-AuthJsonIsChatGpt) {
-        if ($script:ApiKeySource -eq "prompt") {
+        if (-not $Key) {
             Write-Warn "Existing ChatGPT auth detected in $AuthFile"
             try {
                 $choice = Read-Host "Replace auth.json with CometAPI API-key auth? [y/N]"

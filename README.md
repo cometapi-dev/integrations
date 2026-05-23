@@ -32,7 +32,7 @@ powershell -c "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/
 powershell -c "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/cometapi-dev/integrations/main/codex/setup.ps1'))) -Key '<COMETAPI_KEY>' -Model 'your-model-id'"
 ```
 
-The default Codex setup stores the CometAPI key in `~/.codex/cometapi_api_key`
+The default Codex setup stores the CometAPI key in `~/.codex/cometapi_key`
 and does not replace an existing ChatGPT login in `~/.codex/auth.json`.
 On Windows native PowerShell, `~/.codex` is `%USERPROFILE%\.codex`
 (`$HOME\.codex` in PowerShell), typically `C:\Users\<user>\.codex`.
@@ -41,6 +41,9 @@ If interactive setup detects an existing ChatGPT `auth.json`, it asks before
 replacing it with CometAPI API-key auth. Use `--force-auth-json` or
 `-ForceAuthJson` only when you want Codex's legacy API-key login file to be
 managed by the setup script.
+When `COMETAPI_KEY` or a saved key already exists, interactive setup asks
+whether to use it; entering a new key only updates Codex files and never changes
+your shell environment variables.
 
 ## OpenClaw
 
